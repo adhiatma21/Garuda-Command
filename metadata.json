@@ -1,0 +1,10 @@
+{
+  "name": "DIRGANTARA: AIRBASE COMMAND",
+  "description": "Airbase Military Command Simulator featuring real-time flight tracking, VVIP escort, Reconnaissance ISR & Tactical Strike missions, air-to-air refueling, payload weight calculations, and tactical radar operations.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

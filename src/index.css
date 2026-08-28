@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Radar Sweep Effect */
+.radar-layer {
+  filter: hue-rotate(90deg) brightness(1.2) contrast(1.2);
+}
+
+.leaflet-container {
+  background: #05070a !important;
+}
+
+/* Animation for radar sweep */
+@keyframes sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.radar-sweep {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200px;
+  height: 200px;
+  background: conic-gradient(from 0deg, rgba(107, 114, 128, 0.2) 0%, transparent 50%);
+  border-radius: 50%;
+  transform-origin: center;
+  animation: sweep 4s linear infinite;
+  pointer-events: none;
+  z-index: 1000;
+}

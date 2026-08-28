@@ -1,0 +1,247 @@
+export interface Aircraft {
+  id: string;
+  name: string;
+  maxFuel: number; // lbs
+  burnRate: number; // lbs per NM
+  cruiseSpeed: number; // knots
+  maxSpeed?: number;
+  maxAltitude?: number;
+  maxRange?: number;
+  emptyWeight?: number; // lbs (Clean Operating Empty Weight without weapons/tanks)
+  maxTakeoffWeight?: number; // lbs (MTOW)
+  type: 'fighter' | 'transport' | 'commercial' | 'general';
+  image: string;
+  specs: {
+    engine: string;
+    maxSpeed: string;
+    range: string;
+    ceiling: string;
+    armament?: string;
+    payload?: string;
+  };
+}
+
+export interface Position {
+  lat: number;
+  lng: number;
+}
+
+export interface Waypoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  reached: boolean;
+  timestamp?: number;
+  planAltitude?: number; // ft
+  planSpeed?: number; // kts
+  estFuelRemaining?: number; // lbs
+  estTimeMinutes?: number;
+  type: 'waypoint' | 'airport' | 'tanker';
+  isRV?: boolean;
+}
+
+export interface PilotHistory {
+  aircraftId: string;
+  aircraftName: string;
+  totalHours: number;
+  totalPoints: number;
+  missionsCompleted: number;
+}
+
+export interface Crew {
+  pilot: string;
+  coPilot: string;
+  callSign: string;
+  crewCount: number;
+  cabinCount: number;
+}
+
+export interface PlayerProfile {
+  email: string;
+  commanderName: string;
+  callsign: string;
+  rank: string;
+  branch: string;
+  specialization: string;
+  homeAirbase: string;
+  squadron: string;
+  primaryAircraftId: string;
+}
+
+export interface FlightManagement {
+  crew: Crew;
+  payload: number; // lbs
+  combatMode: boolean;
+  missionType: string;
+  useSubTank?: boolean;
+}
+
+export type ScenarioType =
+  | 'TURBULENCE'
+  | 'TRAFFIC'
+  | 'WEATHER'
+  | 'ENGINE'
+  | 'LANDING'
+  | 'INTERCEPT'
+  | 'SHADOW'
+  | 'RTB'
+  | 'SYSTEM'
+  | 'INFO'
+  | 'ESCORT';
+
+export interface Scenario {
+  id: string;
+  type: ScenarioType | string;
+  message?: string;
+  title?: string;
+  description?: string;
+  actionRequired?: string;
+  suggestedValue?: number;
+  resolved: boolean;
+  points?: number;
+  fuelCost?: number;
+  duration?: number;
+}
+
+export interface FlightPlan {
+  id?: string;
+  name?: string;
+  aircraftId: string;
+  initialFuel: number;
+  waypoints: Waypoint[];
+  flightManagement?: FlightManagement;
+  timestamp?: number;
+}
+
+export interface SavedRoute extends FlightPlan {
+  id: string;
+  name: string;
+  timestamp?: number;
+}
+
+export interface TrafficAircraft {
+  id: string;
+  lat: number;
+  lng: number;
+  heading: number;
+  speed: number;
+  altitude: number;
+  callsign: string;
+  ttl: number;
+  isEnemy?: boolean;
+}
+
+export interface TankerAircraft {
+  id: string;
+  lat: number;
+  lng: number;
+  heading: number;
+  state: 'spawning' | 'flying_to_wp' | 'refueling' | 'returning';
+  distToBase?: number;
+  wp: Waypoint;
+  base: { lat: number; lng: number; icao?: string; name?: string };
+  callsign: string;
+}
+
+export type EscortStage = 'idle' | 'pre_rendezvous' | 'refueling' | 'escorting' | 'vvip_landed' | 'complete';
+
+export type ReconMissionPhase =
+  | 'idle'
+  | 'recon_planning'
+  | 'recon_enroute'
+  | 'recon_scanning'
+  | 'intel_acquired'
+  | 'awaiting_strike_scramble'
+  | 'strike_enroute'
+  | 'strike_engagement'
+  | 'strike_success'
+  | 'strike_rtb'
+  | 'mission_completed';
+
+export type ReconThreatType =
+  | 'enemy_fighter'
+  | 'enemy_warship'
+  | 'enemy_submarine'
+  | 'insurgents'
+  | 'anti_air_sam'
+  | 'radar_installation';
+
+export type ReconCommandAction =
+  | 'pengeboman'
+  | 'penghancuran'
+  | 'surveillance'
+  | 'escorting';
+
+export interface ReconIntelTarget {
+  id: string;
+  name: string;
+  type: ReconThreatType;
+  lat: number;
+  lng: number;
+  altitudeFt?: number;
+  heading?: number;
+  threatLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+  descriptionId: string;
+  descriptionEn: string;
+  actionRequired: ReconCommandAction;
+  recommendedWeapons: string[];
+  detectedAtWpIndex: number;
+  isEliminated: boolean;
+  engagementRadiusNM: number;
+}
+
+export interface ReconFlightData {
+  aircraftId: string;
+  pos: Position | null;
+  heading: number;
+  altitude: number;
+  speed: number;
+  currentWpIndex: number;
+  scanProgress: number; // 0-100%
+  sensorActive: boolean;
+}
+
+export interface ReconState {
+  phase: ReconMissionPhase;
+  selectedReconId: string;
+  departureIcao: string;
+  arrivalIcao: string;
+  surveyPoints: Waypoint[];
+  reconFlight: ReconFlightData;
+  isOutOfScope: boolean;
+  totalDistanceNM: number;
+  maxRangeNM: number;
+  detectedTargets: ReconIntelTarget[];
+  activeTargetIndex: number;
+  scrambleApproved: boolean;
+  targetCoordsInput: { lat: string; lng: string };
+  selectedWeapon: string;
+  strikePayloadWeight: number;
+  strikeTakeoffBaseIcao: string;
+  strikeLandingBaseIcao: string;
+  intelReportDispatched: boolean;
+}
+
+export interface FlightState {
+  currentPos: Position | null;
+  currentAltitude: number;
+  speed: number | null;
+  heading: number | null;
+  verticalSpeed: number;
+  targetAltitude: number;
+  targetHeading: number;
+  targetSpeed: number;
+  autoPilot: boolean;
+  flightDirector: boolean;
+  combatMode: boolean;
+  fuelRemaining: number;
+  initialFuel: number;
+  flightHours: number;
+  points: number;
+  isTracking: boolean;
+  isSimulating: boolean;
+  isRTB: boolean;
+  missionType: string;
+  escortStage: EscortStage;
+}

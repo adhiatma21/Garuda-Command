@@ -41,7 +41,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { Aircraft, Crew, PlayerProfile, OwnedAircraft, SquadronCrewRoster, FacilityState } from '../../../types';
+import { Aircraft, Crew, PlayerProfile, OwnedAircraft, SquadronCrewRoster, FacilityState, AircraftGenerationUpgrade } from '../../../types';
 import { SQUADRON_DATA, AIRCRAFT_PRESETS } from '../../../constants';
 import { MilitaryAirport } from '../../../airports';
 import { 
@@ -53,6 +53,8 @@ import {
   createDefaultOwnedAircraft, 
   createDefaultCrewRoster 
 } from '../../../data/squadronState';
+import { SquadronWeaponsView } from './SquadronWeaponsView';
+import { SquadronGenUpgradeView } from './SquadronGenUpgradeView';
 
 interface SquadronTabProps {
   language: 'id' | 'en';
@@ -387,6 +389,45 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     return ownedFleet[0]?.tailNumber || 'TS-1601';
   });
 
+  // 6. Unlocked Weapons & External Fuel Tanks Catalog
+  const [unlockedWeaponIds, setUnlockedWeaponIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_unlocked_weapons`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return ['aim9x', 'aim120c', 'gbu12', 'mk82_bomb', 'sniper_xr', 'tank_300gal', 'r73'];
+  });
+
+  // 7. Active Hardpoint Stations Loadout
+  const [hardpoints, setHardpoints] = useState<{
+    wingtip: string | null;
+    outboard: string | null;
+    inboard: string | null;
+    conformal: string | null;
+    centerline: string | null;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_hardpoints`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed) return parsed;
+      }
+    } catch (e) {}
+    return {
+      wingtip: 'aim9x',
+      outboard: 'aim120c',
+      inboard: 'tank_300gal',
+      conformal: null,
+      centerline: 'sniper_xr'
+    };
+  });
+
+  // 8. Service Facility Sub-tabs: 'facilities' | 'gen_upgrade' | 'diagnostics'
+  const [serviceSubTab, setServiceSubTab] = useState<'facilities' | 'gen_upgrade' | 'diagnostics'>('facilities');
+
   // Sync state changes to LocalStorage
   useEffect(() => {
     try {
@@ -395,8 +436,10 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       localStorage.setItem(`${storageKey}_crew_roster`, JSON.stringify(crewRoster));
       localStorage.setItem(`${storageKey}_hangar_level`, String(hangarLevelIndex));
       localStorage.setItem(`${storageKey}_apron_level`, String(apronLevelIndex));
+      localStorage.setItem(`${storageKey}_unlocked_weapons`, JSON.stringify(unlockedWeaponIds));
+      localStorage.setItem(`${storageKey}_hardpoints`, JSON.stringify(hardpoints));
     } catch (e) {}
-  }, [storageKey, budget, ownedFleet, crewRoster, hangarLevelIndex, apronLevelIndex]);
+  }, [storageKey, budget, ownedFleet, crewRoster, hangarLevelIndex, apronLevelIndex, unlockedWeaponIds, hardpoints]);
 
   // Synchronize activeHealthTail if fleet changes
   useEffect(() => {
@@ -734,6 +777,51 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         );
       }
     }, 1400);
+  };
+
+  // 7. UPGRADE AIRCRAFT GENERATION TIER
+  const handleUpgradeAircraftGeneration = (targetAircraftTail: string, upgrade: AircraftGenerationUpgrade) => {
+    setOwnedFleet(prev => prev.map(item => {
+      if (item.tailNumber !== targetAircraftTail) return item;
+
+      const upgradedModelName = `${item.aircraft.name} (${upgrade.targetNameSuffix})`;
+      const updatedUpgrades = Array.from(new Set([...(item.upgradesApplied || []), upgrade.id]));
+
+      const updatedAircraft: Aircraft = {
+        ...item.aircraft,
+        name: upgradedModelName,
+        cruiseSpeed: item.aircraft.cruiseSpeed + (upgrade.statBoosts.cruiseSpeedBoost || 30),
+        specs: {
+          ...item.aircraft.specs,
+          maxSpeed: upgrade.statBoosts.maxSpeed,
+          range: `${item.aircraft.specs.range} (${upgrade.statBoosts.rangeBoost})`,
+          ceiling: upgrade.statBoosts.ceiling,
+          avionics: upgrade.statBoosts.radarType,
+          hardpoints: `${item.aircraft.specs.hardpoints} (Conformal & Gen ${upgrade.targetGeneration} Certified)`
+        }
+      };
+
+      // If active flight simulator aircraft is this one, update it
+      if (selectedAircraft.id === item.aircraft.id || selectedAircraft.name.includes(item.aircraft.name)) {
+        setSelectedAircraft(updatedAircraft);
+      }
+
+      return {
+        ...item,
+        customName: upgradedModelName,
+        generationTier: upgrade.targetGeneration,
+        generationBadge: upgrade.generationBadge,
+        upgradesApplied: updatedUpgrades,
+        aircraft: updatedAircraft,
+        health: {
+          airframe: 100,
+          engine: 100,
+          hydraulics: 100,
+          avionics: 100,
+          fuelSystem: 100
+        }
+      };
+    }));
   };
 
   // Fuel change handler
@@ -1595,184 +1683,245 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         {/* ============================================================== */}
         {activeModule === 'service' && (
           <div className="space-y-3">
-            {/* Header */}
+            {/* Header & Sub-Tab Switcher */}
             <div className="flex items-center justify-between">
-              <span className="text-[9px] font-mono text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+              <span className="text-[9px] font-mono text-blue-400 uppercase tracking-widest flex items-center gap-1.5 font-bold">
                 <Building className="w-3.5 h-3.5" />
-                <span>{language === 'id' ? 'FASILITAS HANGGAR & AIRCRAFT APRON' : 'HANGAR & APRON FACILITIES'}</span>
-              </span>
-              <span className="text-[8px] font-mono text-white/40">Skatek 042 / Lanud</span>
-            </div>
-
-            {/* FACILITY 1: FASILITAS HANGGAR PERAWATAN */}
-            <div className="p-3.5 bg-black/60 border border-white/10 rounded-2xl space-y-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl">
-                    <Warehouse className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-black text-white font-mono block">
-                      {currentHangar.titleId}
-                    </span>
-                    <span className="text-[7.5px] font-mono text-blue-300">
-                      Kapasitas Hanggar: {ownedFleet.length} / {currentHangar.capacity} Pesawat Tempur
-                    </span>
-                  </div>
-                </div>
-
-                <span className="text-[8px] font-mono bg-blue-600/30 text-blue-300 px-2 py-0.5 rounded border border-blue-500/40 font-bold">
-                  LEVEL {currentHangar.level}
-                </span>
-              </div>
-
-              <p className="text-[8px] font-mono text-white/70">
-                {currentHangar.descriptionId}
-              </p>
-
-              {/* Features list */}
-              <div className="grid grid-cols-2 gap-1.5 text-[7.5px] font-mono bg-white/5 p-2 rounded-xl">
-                {currentHangar.features.map((feat, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 text-white/80">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span className="truncate">{feat}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Upgrade Button */}
-              {nextHangar ? (
-                <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                  <div>
-                    <span className="text-[7.5px] font-mono text-white/40 block">UPGRADE KE LEVEL {nextHangar.level} ({nextHangar.capacity} PESAWAT)</span>
-                    <span className="text-xs font-black text-amber-300 font-mono">
-                      {formatCurrency(currentHangar.upgradeCost)}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleUpgradeHangar}
-                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[8.5px] font-mono font-bold uppercase transition-all shadow-lg shadow-blue-600/30 active:scale-95 flex items-center gap-1.5"
-                  >
-                    <ArrowUpRight className="w-3.5 h-3.5" />
-                    <span>UPGRADE HANGGAR</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center text-[8px] font-mono text-emerald-300 font-bold">
-                  HANGGAR TELAH MENCAPAI LEVEL MAKSIMUM (MAX LEVEL 4)
-                </div>
-              )}
-            </div>
-
-            {/* FACILITY 2: FASILITAS AIRCRAFT APRON / TARMAC */}
-            <div className="p-3.5 bg-black/60 border border-white/10 rounded-2xl space-y-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 bg-amber-600/20 text-amber-400 border border-amber-500/30 rounded-xl">
-                    <Layers className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-black text-white font-mono block">
-                      {currentApron.titleId}
-                    </span>
-                    <span className="text-[7.5px] font-mono text-amber-300">
-                      Kapasitas Hardstand: {ownedFleet.length} / {currentApron.capacity} Pesawat Tempur
-                    </span>
-                  </div>
-                </div>
-
-                <span className="text-[8px] font-mono bg-amber-600/30 text-amber-300 px-2 py-0.5 rounded border border-amber-500/40 font-bold">
-                  LEVEL {currentApron.level}
-                </span>
-              </div>
-
-              <p className="text-[8px] font-mono text-white/70">
-                {currentApron.descriptionId}
-              </p>
-
-              {/* Features list */}
-              <div className="grid grid-cols-2 gap-1.5 text-[7.5px] font-mono bg-white/5 p-2 rounded-xl">
-                {currentApron.features.map((feat, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 text-white/80">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span className="truncate">{feat}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Upgrade Button */}
-              {nextApron ? (
-                <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                  <div>
-                    <span className="text-[7.5px] font-mono text-white/40 block">UPGRADE KE LEVEL {nextApron.level} ({nextApron.capacity} PESAWAT)</span>
-                    <span className="text-xs font-black text-amber-300 font-mono">
-                      {formatCurrency(currentApron.upgradeCost)}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleUpgradeApron}
-                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-[8.5px] font-mono font-bold uppercase transition-all shadow-lg shadow-amber-600/30 active:scale-95 flex items-center gap-1.5"
-                  >
-                    <ArrowUpRight className="w-3.5 h-3.5" />
-                    <span>UPGRADE APRON</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center text-[8px] font-mono text-emerald-300 font-bold">
-                  APRON TELAH MENCAPAI LEVEL MAKSIMUM (MAX LEVEL 4)
-                </div>
-              )}
-            </div>
-
-            {/* DIAGNOSTIC WORKSHOP ACTIONS */}
-            <div className="space-y-1.5">
-              <span className="text-[8px] font-mono text-white/40 uppercase tracking-wider block">
-                DIAGNOSTIK WORKSHOP CEPAT
+                <span>{language === 'id' ? 'FASILITAS HANGGAR & APRON SKADRON' : 'HANGAR & APRON FACILITIES'}</span>
               </span>
 
-              <div className="grid grid-cols-2 gap-2">
+              {/* Sub-tab Navigation */}
+              <div className="flex items-center gap-1 bg-white/5 p-0.5 rounded-lg border border-white/10 text-[8px] font-mono">
                 <button
                   type="button"
-                  disabled={Boolean(serviceInProgress)}
-                  onClick={() => handleServiceAircraft(activeHealthTail, 'engine')}
-                  className="p-2 bg-white/5 hover:bg-blue-600/20 border border-white/10 hover:border-blue-500/40 rounded-xl text-left transition-all text-[8px] font-mono"
+                  onClick={() => setServiceSubTab('facilities')}
+                  className={cn(
+                    "px-2 py-1 rounded transition-all font-bold",
+                    serviceSubTab === 'facilities' ? "bg-blue-600 text-white shadow" : "text-white/50 hover:text-white"
+                  )}
                 >
-                  <div className="flex items-center gap-1.5 text-amber-300 font-bold mb-0.5">
-                    <Flame className="w-3.5 h-3.5" />
-                    <span>Engine Spool Test</span>
-                  </div>
-                  <span className="text-white/40 text-[7px]">Uji kompresi turbin 680°C</span>
+                  {language === 'id' ? 'Fasilitas Pangkalan' : 'Facilities'}
                 </button>
 
                 <button
                   type="button"
-                  disabled={Boolean(serviceInProgress)}
-                  onClick={() => handleServiceAircraft(activeHealthTail, 'avionics')}
-                  className="p-2 bg-white/5 hover:bg-blue-600/20 border border-white/10 hover:border-blue-500/40 rounded-xl text-left transition-all text-[8px] font-mono"
+                  onClick={() => setServiceSubTab('gen_upgrade')}
+                  className={cn(
+                    "px-2 py-1 rounded transition-all font-bold flex items-center gap-1",
+                    serviceSubTab === 'gen_upgrade' ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow" : "text-amber-300/80 hover:text-amber-200"
+                  )}
                 >
-                  <div className="flex items-center gap-1.5 text-indigo-300 font-bold mb-0.5">
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span>Radar & IFF Crypto</span>
-                  </div>
-                  <span className="text-white/40 text-[7px]">Kalibrasi ECCM & Jammer</span>
+                  <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-pulse" />
+                  <span>{language === 'id' ? 'Upgrade Generasi' : 'Gen Upgrades'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setServiceSubTab('diagnostics')}
+                  className={cn(
+                    "px-2 py-1 rounded transition-all font-bold",
+                    serviceSubTab === 'diagnostics' ? "bg-blue-600 text-white shadow" : "text-white/50 hover:text-white"
+                  )}
+                >
+                  {language === 'id' ? 'Diagnostik' : 'Diagnostics'}
                 </button>
               </div>
             </div>
 
-            {/* Service result notification */}
-            {serviceMessage && (
-              <motion.div
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-2.5 bg-emerald-500/10 border border-emerald-500/40 rounded-xl text-[8.5px] font-mono text-emerald-300 flex items-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                <span>{serviceMessage}</span>
-              </motion.div>
+            {/* SUBTAB 1: HANGAR & APRON LEVEL UPGRADES */}
+            {serviceSubTab === 'facilities' && (
+              <div className="space-y-3">
+                {/* FACILITY 1: FASILITAS HANGGAR PERAWATAN */}
+                <div className="p-3.5 bg-black/60 border border-white/10 rounded-2xl space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl">
+                        <Warehouse className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-white font-mono block">
+                          {currentHangar.titleId}
+                        </span>
+                        <span className="text-[7.5px] font-mono text-blue-300">
+                          Kapasitas Hanggar: {ownedFleet.length} / {currentHangar.capacity} Pesawat Tempur
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="text-[8px] font-mono bg-blue-600/30 text-blue-300 px-2 py-0.5 rounded border border-blue-500/40 font-bold">
+                      LEVEL {currentHangar.level}
+                    </span>
+                  </div>
+
+                  <p className="text-[8px] font-mono text-white/70">
+                    {currentHangar.descriptionId}
+                  </p>
+
+                  {/* Features list */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[7.5px] font-mono bg-white/5 p-2 rounded-xl">
+                    {currentHangar.features.map((feat, idx) => (
+                      <div key={idx} className="flex items-center gap-1.5 text-white/80">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span className="truncate">{feat}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Upgrade Button */}
+                  {nextHangar ? (
+                    <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                      <div>
+                        <span className="text-[7.5px] font-mono text-white/40 block">UPGRADE KE LEVEL {nextHangar.level} ({nextHangar.capacity} PESAWAT)</span>
+                        <span className="text-xs font-black text-amber-300 font-mono">
+                          {formatCurrency(currentHangar.upgradeCost)}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleUpgradeHangar}
+                        className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[8.5px] font-mono font-bold uppercase transition-all shadow-lg shadow-blue-600/30 active:scale-95 flex items-center gap-1.5"
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span>UPGRADE HANGGAR</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center text-[8px] font-mono text-emerald-300 font-bold">
+                      HANGGAR TELAH MENCAPAI LEVEL MAKSIMUM (MAX LEVEL 4)
+                    </div>
+                  )}
+                </div>
+
+                {/* FACILITY 2: FASILITAS AIRCRAFT APRON / TARMAC */}
+                <div className="p-3.5 bg-black/60 border border-white/10 rounded-2xl space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-amber-600/20 text-amber-400 border border-amber-500/30 rounded-xl">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-white font-mono block">
+                          {currentApron.titleId}
+                        </span>
+                        <span className="text-[7.5px] font-mono text-amber-300">
+                          Kapasitas Hardstand: {ownedFleet.length} / {currentApron.capacity} Pesawat Tempur
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="text-[8px] font-mono bg-amber-600/30 text-amber-300 px-2 py-0.5 rounded border border-amber-500/40 font-bold">
+                      LEVEL {currentApron.level}
+                    </span>
+                  </div>
+
+                  <p className="text-[8px] font-mono text-white/70">
+                    {currentApron.descriptionId}
+                  </p>
+
+                  {/* Features list */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[7.5px] font-mono bg-white/5 p-2 rounded-xl">
+                    {currentApron.features.map((feat, idx) => (
+                      <div key={idx} className="flex items-center gap-1.5 text-white/80">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span className="truncate">{feat}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Upgrade Button */}
+                  {nextApron ? (
+                    <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                      <div>
+                        <span className="text-[7.5px] font-mono text-white/40 block">UPGRADE KE LEVEL {nextApron.level} ({nextApron.capacity} PESAWAT)</span>
+                        <span className="text-xs font-black text-amber-300 font-mono">
+                          {formatCurrency(currentApron.upgradeCost)}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleUpgradeApron}
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-[8.5px] font-mono font-bold uppercase transition-all shadow-lg shadow-amber-600/30 active:scale-95 flex items-center gap-1.5"
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span>UPGRADE APRON</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center text-[8px] font-mono text-emerald-300 font-bold">
+                      APRON TELAH MENCAPAI LEVEL MAKSIMUM (MAX LEVEL 4)
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* SUBTAB 2: AIRCRAFT GENERATION MODERNIZATION UPGRADE */}
+            {serviceSubTab === 'gen_upgrade' && (
+              <SquadronGenUpgradeView
+                language={language}
+                playerProfile={playerProfile}
+                activeAircraft={activeConditionAircraft}
+                currentHangar={currentHangar}
+                budget={budget}
+                setBudget={setBudget}
+                onUpgradeAircraft={handleUpgradeAircraftGeneration}
+                formatCurrency={formatCurrency}
+                setTransactionFeedback={setTransactionFeedback}
+                speak={speak}
+              />
+            )}
+
+            {/* SUBTAB 3: DIAGNOSTIC WORKSHOP */}
+            {serviceSubTab === 'diagnostics' && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <span className="text-[8px] font-mono text-white/40 uppercase tracking-wider block">
+                    DIAGNOSTIK WORKSHOP CEPAT
+                  </span>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={Boolean(serviceInProgress)}
+                      onClick={() => handleServiceAircraft(activeHealthTail, 'engine')}
+                      className="p-2 bg-white/5 hover:bg-blue-600/20 border border-white/10 hover:border-blue-500/40 rounded-xl text-left transition-all text-[8px] font-mono"
+                    >
+                      <div className="flex items-center gap-1.5 text-amber-300 font-bold mb-0.5">
+                        <Flame className="w-3.5 h-3.5" />
+                        <span>Engine Spool Test</span>
+                      </div>
+                      <span className="text-white/40 text-[7px]">Uji kompresi turbin 680°C</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={Boolean(serviceInProgress)}
+                      onClick={() => handleServiceAircraft(activeHealthTail, 'avionics')}
+                      className="p-2 bg-white/5 hover:bg-blue-600/20 border border-white/10 hover:border-blue-500/40 rounded-xl text-left transition-all text-[8px] font-mono"
+                    >
+                      <div className="flex items-center gap-1.5 text-indigo-300 font-bold mb-0.5">
+                        <Cpu className="w-3.5 h-3.5" />
+                        <span>Radar & IFF Crypto</span>
+                      </div>
+                      <span className="text-white/40 text-[7px]">Kalibrasi ECCM & Jammer</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Service result notification */}
+                {serviceMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-2.5 bg-emerald-500/10 border border-emerald-500/40 rounded-xl text-[8.5px] font-mono text-emerald-300 flex items-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    <span>{serviceMessage}</span>
+                  </motion.div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1967,86 +2116,29 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         {/* MODULE 8: WEAPONRY & HARDPOINTS LOADOUT                        */}
         {/* ============================================================== */}
         {activeModule === 'weapons' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-mono text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Crosshair className="w-3.5 h-3.5" />
-                <span>{language === 'id' ? 'PILIHAN SENJATA & HARDPOINTS' : 'WEAPONS & HARDPOINT LOADOUT'}</span>
-              </span>
-              <span className="text-[8px] font-mono text-white/40">ARMAMENT</span>
-            </div>
-
-            {/* Preset Selector */}
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={() => setWeaponPreset('cap')}
-                className={cn(
-                  "p-2 rounded-xl border text-left transition-all",
-                  weaponPreset === 'cap' ? "bg-blue-600/30 border-blue-500 text-white" : "bg-white/5 border-white/10 text-white/50"
-                )}
-              >
-                <span className="text-[9px] font-bold block">Air Superiority (CAP)</span>
-                <span className="text-[7.5px] font-mono text-white/40">4x AIM-120C, 2x AIM-9X</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWeaponPreset('strike')}
-                className={cn(
-                  "p-2 rounded-xl border text-left transition-all",
-                  weaponPreset === 'strike' ? "bg-blue-600/30 border-blue-500 text-white" : "bg-white/5 border-white/10 text-white/50"
-                )}
-              >
-                <span className="text-[9px] font-bold block">Precision Strike (CAS)</span>
-                <span className="text-[7.5px] font-mono text-white/40">2x GBU-12, 2x Maverick</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWeaponPreset('maritime')}
-                className={cn(
-                  "p-2 rounded-xl border text-left transition-all",
-                  weaponPreset === 'maritime' ? "bg-blue-600/30 border-blue-500 text-white" : "bg-white/5 border-white/10 text-white/50"
-                )}
-              >
-                <span className="text-[9px] font-bold block">Maritime Patrol (MPA)</span>
-                <span className="text-[7.5px] font-mono text-white/40">Targeting Pod & Radar</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWeaponPreset('long_range')}
-                className={cn(
-                  "p-2 rounded-xl border text-left transition-all",
-                  weaponPreset === 'long_range' ? "bg-blue-600/30 border-blue-500 text-white" : "bg-white/5 border-white/10 text-white/50"
-                )}
-              >
-                <span className="text-[9px] font-bold block">Ferry / Long-Range</span>
-                <span className="text-[7.5px] font-mono text-white/40">3x External Drop Tanks</span>
-              </button>
-            </div>
-
-            {/* Hardpoint slots list */}
-            <div className="space-y-1.5 text-[9px] font-mono bg-black/40 p-2.5 rounded-xl border border-white/5">
-              <div className="flex items-center justify-between p-1.5 bg-white/5 rounded-lg">
-                <span className="text-white/60">Wingtip Stations (1 & 9):</span>
-                <span className="text-cyan-300 font-bold">AIM-9X Sidewinder / R-73</span>
-              </div>
-              <div className="flex items-center justify-between p-1.5 bg-white/5 rounded-lg">
-                <span className="text-white/60">Underwing Stations (2, 3, 7, 8):</span>
-                <span className="text-emerald-400 font-bold">AIM-120C AMRAAM / R-77</span>
-              </div>
-              <div className="flex items-center justify-between p-1.5 bg-white/5 rounded-lg">
-                <span className="text-white/60">Centerline Station (5):</span>
-                <span className="text-amber-300 font-bold">Sniper XR Targeting Pod</span>
-              </div>
-              <div className="flex items-center justify-between p-1.5 bg-white/5 rounded-lg">
-                <span className="text-white/60">Internal Gun Cannon:</span>
-                <span className="text-white font-bold">20mm M61A1 Vulcan (511 Rnds)</span>
-              </div>
-            </div>
-          </div>
+          <SquadronWeaponsView
+            language={language}
+            selectedAircraft={selectedAircraft}
+            budget={budget}
+            setBudget={setBudget}
+            unlockedWeaponIds={unlockedWeaponIds}
+            setUnlockedWeaponIds={setUnlockedWeaponIds}
+            hardpoints={hardpoints}
+            setHardpoints={setHardpoints}
+            setTransactionFeedback={setTransactionFeedback}
+            speak={speak}
+            formatCurrency={formatCurrency}
+            onApplyLoadoutToSim={() => {
+              if (setInitialFuel) {
+                let bonus = 0;
+                if (hardpoints.inboard === 'tank_300gal') bonus += 2000;
+                if (hardpoints.inboard === 'tank_370gal') bonus += 2500;
+                if (hardpoints.inboard === 'tank_600gal') bonus += 4000;
+                if (hardpoints.conformal === 'tank_cft_450') bonus += 3000;
+                setInitialFuel(selectedAircraft.maxFuel + bonus);
+              }
+            }}
+          />
         )}
       </div>
     </motion.div>

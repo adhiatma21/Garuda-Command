@@ -1,7 +1,715 @@
-import { Aircraft, OwnedAircraft, SquadronCrewRoster, FacilityState, PlayerProfile } from '../types';
+import { Aircraft, OwnedAircraft, SquadronCrewRoster, FacilityState, PlayerProfile, WeaponItem, AircraftGenerationUpgrade } from '../types';
 import { AIRCRAFT_PRESETS, SQUADRON_DATA } from '../constants';
 
 export const INITIAL_SQUADRON_BUDGET = 1500000000; // Rp 1.500.000.000
+
+export const RANK_HIERARCHY: Record<string, { level: number; label: string; insignia: string }> = {
+  'Letda': { level: 1, label: 'Letnan Dua (Letda)', insignia: '1 Golden Bar' },
+  'Lettu': { level: 2, label: 'Letnan Satu (Lettu)', insignia: '2 Golden Bars' },
+  'Kapten': { level: 3, label: 'Kapten Pnb (Kapt)', insignia: '3 Golden Bars' },
+  'Mayor': { level: 4, label: 'Mayor Pnb (May)', insignia: '1 Golden Diamond' },
+  'Letkol': { level: 5, label: 'Letnan Kolonel (Letkol)', insignia: '2 Golden Diamonds' },
+  'Kolonel': { level: 6, label: 'Kolonel Pnb (Kol)', insignia: '3 Golden Diamonds' },
+  'Marsma': { level: 7, label: 'Marsekal Pertama (Marsma)', insignia: '1 Golden Star' },
+  'Marsda': { level: 8, label: 'Marsekal Muda (Marsda)', insignia: '2 Golden Stars' },
+};
+
+export function getRankLevel(rankString: string | undefined): number {
+  if (!rankString) return 3; // Default Kapten
+  for (const [key, val] of Object.entries(RANK_HIERARCHY)) {
+    if (rankString.toLowerCase().includes(key.toLowerCase())) {
+      return val.level;
+    }
+  }
+  return 3;
+}
+
+export const WEAPONS_ARSENAL_CATALOG: WeaponItem[] = [
+  // --- AIR TO AIR ---
+  {
+    id: 'aim9x',
+    name: 'AIM-9X Block II Sidewinder',
+    category: 'air_to_air',
+    categoryLabelId: 'Rudal Udara-ke-Udara Jarak Dekat (WVR)',
+    categoryLabelEn: 'Short-Range Within-Visual-Range (WVR) IR',
+    descriptionId: 'Rudal pencari panas inframerah berkecepatan tinggi dengan kemampuan High Off-Boresight (HOBS) dan JHMCS Helmet Cueing.',
+    descriptionEn: 'High-agility infrared heat-seeking dogfight missile with High Off-Boresight (HOBS) and Helmet Cueing capability.',
+    price: 15000000,
+    isDefault: true,
+    weightLbs: 188,
+    missionSuitability: ['CAP', 'CAS', 'MARITIME'],
+    hardpointStations: ['wingtip', 'outboard'],
+    specs: {
+      range: '18 NM (33 km)',
+      speed: 'Mach 2.8',
+      guidance: 'Imaging Infrared (IIR)',
+      warhead: '20.8 lb Annular Blast-Frag'
+    }
+  },
+  {
+    id: 'aim120c',
+    name: 'AIM-120C-7 AMRAAM',
+    category: 'air_to_air',
+    categoryLabelId: 'Rudal Udara-ke-Udara Jarak Jauh (BVR)',
+    categoryLabelEn: 'Beyond-Visual-Range (BVR) Active Radar',
+    descriptionId: 'Rudal radar aktif pemusnah target udara jarak jauh dengan panduan radar mandiri Fire-and-Forget dan ECCM tinggi.',
+    descriptionEn: 'Active radar homing BVR missile with fire-and-forget autonomous guidance and high ECCM jamming resistance.',
+    price: 35000000,
+    isDefault: true,
+    weightLbs: 335,
+    missionSuitability: ['CAP', 'STANDOFF'],
+    hardpointStations: ['outboard', 'inboard', 'conformal'],
+    specs: {
+      range: '57 NM (105 km)',
+      speed: 'Mach 4.0',
+      guidance: 'Active Radar Terminal + Midcourse Datalink',
+      warhead: '44 lb High Explosive Blast'
+    }
+  },
+  {
+    id: 'aim120d',
+    name: 'AIM-120D AMRAAM (Extended Range)',
+    category: 'air_to_air',
+    categoryLabelId: 'Rudal BVR Jarak Ekstra Jauh & Two-Way Datalink',
+    categoryLabelEn: 'Extended-Range BVR Datalink Missile',
+    descriptionId: 'Varian mutakhir AMRAAM dengan jangkauan 160 km, GPS-aided navigation, dan High-Angle Off-Boresight envelope.',
+    descriptionEn: 'Advanced AMRAAM variant featuring 160 km range, two-way datalink, GPS navigation, and expanded kill envelope.',
+    price: 55000000,
+    isDefault: false,
+    weightLbs: 350,
+    missionSuitability: ['CAP', 'STANDOFF'],
+    hardpointStations: ['outboard', 'inboard', 'conformal'],
+    specs: {
+      range: '86 NM (160 km)',
+      speed: 'Mach 4.2',
+      guidance: 'Two-Way Datalink + Active Radar',
+      warhead: '44 lb Fragmentation Warhead'
+    }
+  },
+  {
+    id: 'meteor',
+    name: 'MBDA Meteor Ramjet BVR',
+    category: 'air_to_air',
+    categoryLabelId: 'Rudal Superioritas Udara Ramjet BVR (Rafale / Su-57)',
+    categoryLabelEn: 'Solid Fuel Ramjet BVR Air Superiority Missile',
+    descriptionId: 'Rudal udara-ke-udara bermesin ramjet dengan No-Escape Zone terbesar di dunia (60+ km) untuk dominasi langit total.',
+    descriptionEn: 'Ramjet-powered BVR missile featuring the world’s largest No-Escape Zone (>60 km) for complete air dominance.',
+    price: 85000000,
+    isDefault: false,
+    weightLbs: 420,
+    missionSuitability: ['CAP', 'STANDOFF'],
+    hardpointStations: ['inboard', 'conformal'],
+    specs: {
+      range: '108 NM (200 km)',
+      speed: 'Mach 4.5+ (Sustained Ramjet)',
+      guidance: 'Two-Way Datalink + AESA Seeker',
+      warhead: 'Blast-Fragmentation Proximity'
+    }
+  },
+  {
+    id: 'r73',
+    name: 'Vympel R-73 / Archer',
+    category: 'air_to_air',
+    categoryLabelId: 'Rudal Manuver Tinggi Jarak Dekat Flanker',
+    categoryLabelEn: 'High-Off Boresight Agile IR Missile',
+    descriptionId: 'Rudal udara-ke-udara jarak pendek standar pesawat Sukhoi Flanker dengan thrust vectoring gas-vanes.',
+    descriptionEn: 'Standard high-agility infrared missile for Sukhoi Flanker series with thrust-vectoring gas vanes.',
+    price: 18000000,
+    isDefault: true,
+    weightLbs: 230,
+    missionSuitability: ['CAP', 'CAS'],
+    hardpointStations: ['wingtip', 'outboard'],
+    specs: {
+      range: '16 NM (30 km)',
+      speed: 'Mach 2.5',
+      guidance: 'Cryogenic Infrared (IR)',
+      warhead: '16.3 lb Expanding Rod'
+    }
+  },
+  {
+    id: 'r77_1',
+    name: 'Vympel R-77-1 (RVV-SD)',
+    category: 'air_to_air',
+    categoryLabelId: 'Rudal Radar Aktif Grid-Fin BVR Flanker',
+    categoryLabelEn: 'Grid-Fin Active Radar BVR Missile',
+    descriptionId: 'Rudal BVR Sukhoi dengan kisi ekor (grid fins) unik untuk kelincahan ekstrem saat mengejar target supersonik.',
+    descriptionEn: 'Sukhoi BVR missile featuring signature lattice grid fins for supreme agility against supersonic bandits.',
+    price: 40000000,
+    isDefault: false,
+    weightLbs: 385,
+    missionSuitability: ['CAP', 'STANDOFF'],
+    hardpointStations: ['outboard', 'inboard', 'conformal'],
+    specs: {
+      range: '60 NM (110 km)',
+      speed: 'Mach 4.0',
+      guidance: 'Active Radar Homing (ARH)',
+      warhead: '49 lb Micro-Shaped Charge'
+    }
+  },
+
+  // --- AIR TO GROUND & PRECISION STRIKE ---
+  {
+    id: 'gbu12',
+    name: 'GBU-12 Paveway II (500 lb)',
+    category: 'air_to_ground',
+    categoryLabelId: 'Bom Pintar Pemandu Laser Taktis',
+    categoryLabelEn: '500 lb Laser-Guided Precision Bomb',
+    descriptionId: 'Bom berpemandu laser presisi tinggi dengan sirip sayap pelipat (folding airfoils) untuk dukungan tembakan darat.',
+    descriptionEn: 'High-precision semi-active laser-guided bomb designed for surgical CAS strikes on armored vehicles and bunkers.',
+    price: 20000000,
+    isDefault: true,
+    weightLbs: 610,
+    missionSuitability: ['CAS', 'STANDOFF'],
+    hardpointStations: ['outboard', 'inboard'],
+    specs: {
+      range: '8 NM (Glide)',
+      speed: 'Subsonic Glide',
+      guidance: 'Semi-Active Laser (SAL)',
+      warhead: '190 lb Tritonal High Explosive'
+    }
+  },
+  {
+    id: 'gbu38_jdam',
+    name: 'GBU-38 JDAM (500 lb GPS/INS)',
+    category: 'air_to_ground',
+    categoryLabelId: 'Bom Pintar GPS/INS Segala Cuaca',
+    categoryLabelEn: 'All-Weather GPS/INS Guided Bomb',
+    descriptionId: 'Joint Direct Attack Munition berpemandu satelit GPS/INS untuk menyerang target darat dalam cuaca buruk atau asap tebal.',
+    descriptionEn: 'All-weather autonomous satellite-guided bomb capable of accurate strikes through clouds, smoke, and sandstorms.',
+    price: 25000000,
+    isDefault: false,
+    weightLbs: 590,
+    missionSuitability: ['CAS', 'STANDOFF'],
+    hardpointStations: ['outboard', 'inboard'],
+    specs: {
+      range: '15 NM (High Alt Release)',
+      speed: 'Free-fall Guided',
+      guidance: 'GPS / INS Inertial Guidance',
+      warhead: '192 lb High Explosive Blast'
+    }
+  },
+  {
+    id: 'gbu31_jdam',
+    name: 'GBU-31 JDAM (2,000 lb Bunker Buster)',
+    category: 'air_to_ground',
+    categoryLabelId: 'Bom Berat Penembus Bunker (Bunker Buster)',
+    categoryLabelEn: '2,000 lb Heavy Penetrator Guided Bomb',
+    descriptionId: 'Munisi berat penghancur sasaran keras, pangkalan bawah tanah, jembatan strategis, dan instalasi komando musuh.',
+    descriptionEn: 'Heavy hardened penetrator weapon tailored for fortified underground bunkers, reinforced bridges, and command hubs.',
+    price: 45000000,
+    isDefault: false,
+    weightLbs: 2115,
+    missionSuitability: ['STANDOFF'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '15 NM (GPS Glide)',
+      speed: 'Penetration Velocity',
+      guidance: 'Military GPS / Ring Laser Gyro INS',
+      warhead: '945 lb BLU-109 Hardened Steel Case'
+    }
+  },
+  {
+    id: 'agm65_mav',
+    name: 'AGM-65 Maverick (Anti-Armor / CAS)',
+    category: 'air_to_ground',
+    categoryLabelId: 'Rudal Anti-Tank & Struktur Presisi Taktis',
+    categoryLabelEn: 'Tactical Precision Anti-Armor / CAS Missile',
+    descriptionId: 'Rudal elektro-optik/inframerah untuk penghancuran konvoi tank lapis baja, benteng pertahanan, dan kapal patroli cepat.',
+    descriptionEn: 'Electro-optical and infrared missile optimized for anti-armor, reinforced structures, and high-speed gunboats.',
+    price: 30000000,
+    isDefault: false,
+    weightLbs: 670,
+    missionSuitability: ['CAS', 'MARITIME'],
+    hardpointStations: ['outboard', 'inboard'],
+    specs: {
+      range: '12 NM (22 km)',
+      speed: 'Mach 0.95',
+      guidance: 'Scene-Lock Optical / IR Tracker',
+      warhead: '125 lb Shaped-Charge Penetrator'
+    }
+  },
+  {
+    id: 'hydra70',
+    name: 'LAU-131 Hydra 70mm Rocket Pod (APKWS)',
+    category: 'air_to_ground',
+    categoryLabelId: 'Pod Roket 7-Tabung Bantuan Tembakan Dekat',
+    categoryLabelEn: '7-Tube Guided Rocket Pod for CAS / COIN',
+    descriptionId: 'Pod roket taktis berisi 7 tabung kaliber 70mm dengan sistem panduan laser presisi APKWS (Super Tucano / T-50i / F-16).',
+    descriptionEn: 'Lightweight 7-tube 70mm tactical rocket pod with APKWS laser-guided kits for close air support and counter-insurgency.',
+    price: 12000000,
+    isDefault: false,
+    weightLbs: 240,
+    missionSuitability: ['CAS'],
+    hardpointStations: ['outboard', 'inboard'],
+    specs: {
+      range: '5 NM (9 km)',
+      speed: 'Mach 2.3',
+      guidance: 'Semi-Active Laser Guidance (APKWS)',
+      warhead: '7x M151 High Explosive Warheads'
+    }
+  },
+  {
+    id: 'mk82_bomb',
+    name: 'Mk 82 Snakeye (500 lb General Purpose)',
+    category: 'air_to_ground',
+    categoryLabelId: 'Bom Konvensional Rendah Retardasi (Iron Bomb)',
+    categoryLabelEn: '500 lb Low-Drag Free Fall Bomb',
+    descriptionId: 'Bom konvensional dengan parasut rem (ballute) untuk pengeboman rendah berkecepatan tinggi tanpa membahayakan pesawat.',
+    descriptionEn: 'High-drag retarding tail-fin bomb designed for ultra-low level high-speed bombing runs without fragmentation self-damage.',
+    price: 8000000,
+    isDefault: true,
+    weightLbs: 500,
+    missionSuitability: ['CAS'],
+    hardpointStations: ['outboard', 'inboard'],
+    specs: {
+      range: 'Ballistic Drop Range',
+      speed: 'Aircraft Release Velocity',
+      guidance: 'Unguided Ballistic Trajectory',
+      warhead: '192 lb Tritonal Explosive'
+    }
+  },
+
+  // --- ANTI-SHIP & MARITIME STRIKE ---
+  {
+    id: 'agm84_harpoon',
+    name: 'AGM-84L Harpoon Block II',
+    category: 'anti_ship',
+    categoryLabelId: 'Rudal Anti-Kapal Permukaan Jarak Jauh',
+    categoryLabelEn: 'Over-the-Horizon Maritime Anti-Ship Missile',
+    descriptionId: 'Rudal anti-kapal penjelajah permukaan dengan jalur terbang sea-skimming rendah gelombang dan hulu ledak penetrasi kapal.',
+    descriptionEn: 'Long-range sea-skimming anti-ship cruise missile designed to defeat warships and coastal naval facilities beyond the horizon.',
+    price: 65000000,
+    isDefault: false,
+    weightLbs: 1160,
+    missionSuitability: ['MARITIME', 'STANDOFF'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '67 NM (124 km)',
+      speed: 'Mach 0.85 (High Subsonic)',
+      guidance: 'GPS/INS + Active Radar Seeker',
+      warhead: '488 lb Semi-Armor Piercing'
+    }
+  },
+  {
+    id: 'exocet_am39',
+    name: 'Exocet AM39 Block 2 Mod 2',
+    category: 'anti_ship',
+    categoryLabelId: 'Rudal Anti-Kapal Skim Laut Dassault Rafale',
+    categoryLabelEn: 'Sea-Skimming Naval Strike Missile for Rafale',
+    descriptionId: 'Rudal anti-kapal buatan Prancis untuk Rafale dengan ketinggian terbang hanya 2 meter di atas permukaan ombak laut.',
+    descriptionEn: 'French air-launched anti-ship missile optimized for Rafale, skimming at 2 meters above sea level to evade ship air defenses.',
+    price: 70000000,
+    isDefault: false,
+    weightLbs: 1480,
+    missionSuitability: ['MARITIME'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '40 NM (74 km)',
+      speed: 'Mach 0.93',
+      guidance: 'Inertial + Active J-Band Radar',
+      warhead: '364 lb Insensitive Blast-Fragmentation'
+    }
+  },
+  {
+    id: 'kh31ad',
+    name: 'Kh-31AD Krypton (Supersonic Anti-Ship)',
+    category: 'anti_ship',
+    categoryLabelId: 'Rudal Anti-Kapal Supersonik Mach 3.5 Flanker',
+    categoryLabelEn: 'Mach 3.5 Supersonic Anti-Ship Missile',
+    descriptionId: 'Rudal supersonik tempur Sukhoi dengan kecepatan Mach 3.5 untuk menembus sistem pertahanan Aegis kapal induk musuh.',
+    descriptionEn: 'Supersonic ramjet missile for Sukhoi Flankers, flying at Mach 3.5 to penetrate dense shipborne CIWS and Aegis defenses.',
+    price: 75000000,
+    isDefault: false,
+    weightLbs: 1345,
+    missionSuitability: ['MARITIME'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '86 NM (160 km)',
+      speed: 'Mach 3.5 (Ramjet)',
+      guidance: 'Active Radar Homing',
+      warhead: '243 lb Penetrating Blast'
+    }
+  },
+  {
+    id: 'brahmos_a',
+    name: 'BrahMos-A Supersonic Cruise Missile',
+    category: 'anti_ship',
+    categoryLabelId: 'Rudal Jelajah Supersonik Strategis (300 km)',
+    categoryLabelEn: 'Strategic Mach 3.0 Air-Launched Cruise Missile',
+    descriptionId: 'Rudal jelajah supersonik terberat untuk Sukhoi Su-30 dengan hulu ledak kinetik masif penghancur kapal induk.',
+    descriptionEn: 'Heavy supersonic cruise missile delivering devastating kinetic and explosive impact against capital naval warships.',
+    price: 110000000,
+    isDefault: false,
+    weightLbs: 5500,
+    missionSuitability: ['MARITIME', 'STANDOFF'],
+    hardpointStations: ['centerline'],
+    specs: {
+      range: '162 NM (300 km)',
+      speed: 'Mach 3.0',
+      guidance: 'Satellite Navigation + Active Radar',
+      warhead: '660 lb Semi-Armor Piercing'
+    }
+  },
+
+  // --- LONG-RANGE STANDOFF & SEAD ---
+  {
+    id: 'storm_shadow',
+    name: 'Storm Shadow / SCALP-EG',
+    category: 'long_range',
+    categoryLabelId: 'Rudal Jelajah Siluman Jarak Sangat Jauh',
+    categoryLabelEn: 'Long-Range Stealth Standoff Cruise Missile',
+    descriptionId: 'Rudal jelajah siluman penembus sasaran bernilai tinggi dengan jangkauan 560 km dan hulu ledak ganda BROACH.',
+    descriptionEn: 'Deep-strike low-observable cruise missile with 560 km standoff range and tandem BROACH bunker-penetrating warhead.',
+    price: 120000000,
+    isDefault: false,
+    weightLbs: 2870,
+    missionSuitability: ['STANDOFF'],
+    hardpointStations: ['inboard'],
+    specs: {
+      range: '302 NM (560 km)',
+      speed: 'Mach 0.8',
+      guidance: 'TERPROM Terrain Contour + Imaging IR Terminal',
+      warhead: '990 lb BROACH Multi-Stage Penetrator'
+    }
+  },
+  {
+    id: 'agm158_jassm',
+    name: 'AGM-158 JASSM-ER (Stealth Standoff)',
+    category: 'long_range',
+    categoryLabelId: 'Rudal Jelajah Siluman Presisi 925 km',
+    categoryLabelEn: '925 km Extended-Range Stealth Standoff Cruise',
+    descriptionId: 'Rudal jelajah siluman berjarak hampir 1,000 km dengan profil radar ultra-rendah untuk serangan pangkalan musuh.',
+    descriptionEn: 'Low-observable standoff cruise missile with nearly 1,000 km range designed to neutralize strategic command bases safely.',
+    price: 135000000,
+    isDefault: false,
+    weightLbs: 2250,
+    missionSuitability: ['STANDOFF'],
+    hardpointStations: ['inboard'],
+    specs: {
+      range: '500 NM (925 km)',
+      speed: 'Mach 0.85',
+      guidance: 'Anti-Jam GPS/INS + IIR Automatic Target Recognition',
+      warhead: '1,000 lb WDU-42/B Penetrator'
+    }
+  },
+  {
+    id: 'agm88_harm',
+    name: 'AGM-88E AARGM / HARM (SEAD)',
+    category: 'sead',
+    categoryLabelId: 'Rudal Anti-Radar Penghancur Pertahanan SAM',
+    categoryLabelEn: 'Advanced Anti-Radiation Guided Missile (SEAD)',
+    descriptionId: 'Rudal pemburu emisi radar pertahanan udara lawan (Suppression of Enemy Air Defenses) untuk membuka koridor serangan.',
+    descriptionEn: 'High-speed anti-radiation missile designed to destroy enemy radar sites and surface-to-air missile (SAM) batteries.',
+    price: 55000000,
+    isDefault: false,
+    weightLbs: 780,
+    missionSuitability: ['SEAD', 'CAP'],
+    hardpointStations: ['outboard', 'inboard'],
+    specs: {
+      range: '80 NM (150 km)',
+      speed: 'Mach 2.9+',
+      guidance: 'Millimeter-Wave Radar + Multi-Mode Passive Homers',
+      warhead: '146 lb High-Explosive Tungsten Fragment'
+    }
+  },
+  {
+    id: 'kh31p',
+    name: 'Kh-31P Anti-Radar (SEAD Krypton)',
+    category: 'sead',
+    categoryLabelId: 'Rudal Supersonik Pemburu Radar Musuh Flanker',
+    categoryLabelEn: 'Mach 3.0 Supersonic Anti-Radiation Missile',
+    descriptionId: 'Rudal SEAD berkecepatan supersonik untuk Sukhoi tempur yang melumpuhkan radar peringatan dini dan baterai Patriot musuh.',
+    descriptionEn: 'High-speed supersonic anti-radiation weapon used by Sukhoi fighters to neutralize long-range early-warning radars.',
+    price: 50000000,
+    isDefault: false,
+    weightLbs: 1320,
+    missionSuitability: ['SEAD'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '59 NM (110 km)',
+      speed: 'Mach 3.0',
+      guidance: 'Broadband Passive Radar Seeker',
+      warhead: '192 lb High Explosive'
+    }
+  },
+
+  // --- RECONNAISSANCE & TARGETING PODS ---
+  {
+    id: 'sniper_xr',
+    name: 'Sniper Advanced Targeting Pod (ATP)',
+    category: 'pod',
+    categoryLabelId: 'Pod Sensor Pengintai & Penunjuk Laser Elektro-Optik',
+    categoryLabelEn: 'Advanced EO/IR Targeting & Recon Pod',
+    descriptionId: 'Pod sensor generasi modern dengan FLIR resolusi tinggi, kamera HD-TV, laser designator, dan pelacakan maritim otomatis.',
+    descriptionEn: 'State-of-the-art targeting and recon pod featuring third-generation FLIR, HD-TV, and precision laser tracking.',
+    price: 40000000,
+    isDefault: true,
+    weightLbs: 446,
+    missionSuitability: ['CAS', 'MARITIME', 'RECON'],
+    hardpointStations: ['centerline', 'inboard'],
+    specs: {
+      range: '40 NM Optical Tracking',
+      guidance: 'Dual-Field 3rd Gen FLIR & CCD-TV',
+      speed: 'Mach 2.0 Certified',
+      warhead: 'Non-Weapon Sensor Array'
+    }
+  },
+  {
+    id: 'talios_pod',
+    name: 'Thales TALIOS Optronic Pod (Rafale)',
+    category: 'pod',
+    categoryLabelId: 'Pod Sensor Optronik Jarak Jauh Dassault Rafale',
+    categoryLabelEn: 'Thales Long-Range Target Identification Pod',
+    descriptionId: 'Pod pengintai dan penanda sasaran terintegrasi untuk Rafale yang mampu memetakan medan tempur 3D secara realtime.',
+    descriptionEn: 'High-resolution optronic targeting pod for Rafale providing real-time 3D tactical terrain rendering and deep BDA.',
+    price: 50000000,
+    isDefault: false,
+    weightLbs: 460,
+    missionSuitability: ['CAS', 'MARITIME', 'RECON'],
+    hardpointStations: ['centerline', 'inboard'],
+    specs: {
+      range: '50 NM Detection & ID',
+      guidance: 'Mid-Wave Infrared & Color HD Sensor',
+      speed: 'Supersonic Capable',
+      warhead: 'Non-Weapon Sensor Array'
+    }
+  },
+
+  // --- EXTERNAL FUEL TANKS (VARIED CAPACITIES) ---
+  {
+    id: 'tank_150gal',
+    name: 'Tangki Taktis Centerline (150 Gallons)',
+    category: 'fuel_tank',
+    categoryLabelId: 'Tangki Avtur Eksternal Kompak (+1,000 lbs)',
+    categoryLabelEn: '150 Gal Tactical Centerline Fuel Tank',
+    descriptionId: 'Tangki bahan bakar ramping di stasiun centerline tengah untuk manuver lincah dogfight dengan radius tempur ekstra.',
+    descriptionEn: 'Streamlined centerline tank providing lightweight endurance extension with minimal aerodynamic drag.',
+    price: 10000000,
+    isDefault: false,
+    weightLbs: 150,
+    fuelCapacityGal: 150,
+    fuelCapacityLbs: 1000,
+    rangeBonusNm: 180,
+    missionSuitability: ['CAP', 'CAS', 'FERRY'],
+    hardpointStations: ['centerline'],
+    specs: {
+      range: '+180 NM Radius',
+      speed: 'Mach 1.8 Clearance',
+      warhead: '150 Gal (1,000 lbs Avtur Jet-A1)'
+    }
+  },
+  {
+    id: 'tank_300gal',
+    name: 'Tangki Sayap Bawah Taktis (300 Gallons Drop Tank)',
+    category: 'fuel_tank',
+    categoryLabelId: 'Tangki Sayap Standar Tempur (+2,000 lbs)',
+    categoryLabelEn: '300 Gal Underwing Combat Drop Tank',
+    descriptionId: 'Tangki standar sepasang sayap bawah untuk patroli tempur udara dan operasi pengamanan perbatasan ZEE.',
+    descriptionEn: 'Standard underwing auxiliary drop tanks extending combat air patrol duration over archipelagic borders.',
+    price: 18000000,
+    isDefault: true,
+    weightLbs: 300,
+    fuelCapacityGal: 300,
+    fuelCapacityLbs: 2000,
+    rangeBonusNm: 360,
+    missionSuitability: ['CAP', 'MARITIME', 'FERRY'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '+360 NM Radius',
+      speed: 'Mach 1.6 Clearance',
+      warhead: '300 Gal (2,000 lbs Avtur Jet-A1)'
+    }
+  },
+  {
+    id: 'tank_370gal',
+    name: 'Tangki Tempur Jarak Jauh (370 Gallons Long-Range)',
+    category: 'fuel_tank',
+    categoryLabelId: 'Tangki Sayap Kapasitas Tinggi (+2,500 lbs)',
+    categoryLabelEn: '370 Gal Long-Range Underwing Drop Tank',
+    descriptionId: 'Tangki bahan bakar eksternal kapasitas besar untuk misi penyerangan jarak jauh dan pengawalan VVIP lintas pulau.',
+    descriptionEn: 'High-capacity auxiliary fuel tanks built for trans-island escort sorties and deep maritime strike sweeps.',
+    price: 28000000,
+    isDefault: false,
+    weightLbs: 380,
+    fuelCapacityGal: 370,
+    fuelCapacityLbs: 2500,
+    rangeBonusNm: 520,
+    missionSuitability: ['MARITIME', 'STANDOFF', 'FERRY'],
+    hardpointStations: ['inboard'],
+    specs: {
+      range: '+520 NM Radius',
+      speed: 'Mach 1.5 Clearance',
+      warhead: '370 Gal (2,500 lbs Avtur Jet-A1)'
+    }
+  },
+  {
+    id: 'tank_600gal',
+    name: 'Tangki Heavy Ferry Strategis (600 Gallons Super-Tank)',
+    category: 'fuel_tank',
+    categoryLabelId: 'Tangki Ekstra Berat Penerbangan Ferry (+4,000 lbs)',
+    categoryLabelEn: '600 Gal Strategic Heavy Ferry Fuel Tank',
+    descriptionId: 'Tangki ekstra masif 600 galon untuk relokasi pangkalan antar pulau terjauh (Sabang sampai Merauke) tanpa perlu air refuel.',
+    descriptionEn: 'Massive 600-gallon ferry drop tank enabling non-stop trans-archipelagic deployment without tanker rendezvous.',
+    price: 45000000,
+    isDefault: false,
+    weightLbs: 550,
+    fuelCapacityGal: 600,
+    fuelCapacityLbs: 4000,
+    rangeBonusNm: 850,
+    missionSuitability: ['FERRY', 'STANDOFF'],
+    hardpointStations: ['inboard', 'centerline'],
+    specs: {
+      range: '+850 NM Radius',
+      speed: 'Mach 1.2 Subsonic Cruise',
+      warhead: '600 Gal (4,000 lbs Avtur Jet-A1)'
+    }
+  },
+  {
+    id: 'tank_cft_450',
+    name: 'Conformal Fuel Tanks (CFT 450 Gal Fuselage Packs)',
+    category: 'fuel_tank',
+    categoryLabelId: 'Tangki Konformal Badan Pesawat (Zero Drag Penalty)',
+    categoryLabelEn: 'Conformal Fuel Tanks (CFT) Aerodynamic Pack',
+    descriptionId: 'Tangki konformal yang menempel menyatu di punggung badan pesawat. Menambah 3,000 lbs bahan bakar tanpa mengurangi slot hardpoint sayap!',
+    descriptionEn: 'Fuselage-hugging conformal fuel tanks adding 3,000 lbs of fuel with zero station blockage and negligible drag.',
+    price: 60000000,
+    isDefault: false,
+    weightLbs: 350,
+    fuelCapacityGal: 450,
+    fuelCapacityLbs: 3000,
+    rangeBonusNm: 650,
+    missionSuitability: ['CAP', 'CAS', 'MARITIME', 'STANDOFF', 'FERRY'],
+    hardpointStations: ['conformal'],
+    specs: {
+      range: '+650 NM Radius',
+      speed: 'Full Envelope Mach 2.0',
+      warhead: '450 Gal (3,000 lbs Internal Boost)'
+    }
+  }
+];
+
+export const AIRCRAFT_GENERATION_UPGRADE_CATALOG: AircraftGenerationUpgrade[] = [
+  {
+    id: 'gen_4_5_viper',
+    targetGeneration: '4.5',
+    generationBadge: 'GEN 4.5 eMLU+ VIPER',
+    titleId: 'Modernisasi Generasi 4.5 (eMLU Block 70 Viper Standard)',
+    titleEn: 'Generation 4.5 Modernization (Block 70 Viper Standard)',
+    targetNameSuffix: 'Block 70 Viper eMLU',
+    descriptionId: 'Peningkatan radar AESA APG-83 SABR, kokpit kaca layar sentuh CPD, Link-16 Tactical Network, dan pod ECM mutakhir.',
+    descriptionEn: 'Upgrade with APG-83 SABR AESA radar, Center Pedestal Display glass cockpit, Link-16, and integrated ECM suite.',
+    cost: 120000000, // Rp 120 Juta
+    requiredRank: 'Kapten Pnb',
+    requiredRankLevel: 3,
+    minFlightHours: 25.0,
+    requiredHangarLevel: 2,
+    statBoosts: {
+      maxSpeed: 'Mach 2.05 (+0.05 Mach)',
+      cruiseSpeedBoost: 30, // +30 kts
+      rangeBoost: '+450 NM',
+      ceiling: '52,000 ft (+2,000 ft)',
+      radarType: 'APG-83 SABR AESA Active Electronically Scanned Array',
+      stealthRCS: 'Reduced RCS Radar Baffle Treatment',
+      gLimits: '+9.0G Sustained'
+    },
+    keyFeatures: [
+      'Radar AESA APG-83 (Deteksi 160 NM)',
+      'Center Pedestal Glass Cockpit & Link-16',
+      'Auto GCAS (Ground Collision Avoidance)',
+      'ALQ-211(V)9 Integrated ECM & Jammer'
+    ]
+  },
+  {
+    id: 'gen_4_plus_plus_omnirole',
+    targetGeneration: '4++',
+    generationBadge: 'GEN 4++ SUPER OMNIROLE',
+    titleId: 'Modernisasi Generasi 4++ (Super Omnirole & Thrust Vectoring)',
+    titleEn: 'Generation 4++ Super Omnirole Modernization',
+    targetNameSuffix: 'Super Omnirole F4+',
+    descriptionId: 'Integrasi mesin 3D Thrust Vectoring Turbines untuk kelincahan post-stall, sistem optronik SPECTRA, dan radar RBE2 AESA 3D.',
+    descriptionEn: 'Integration of 3D Thrust Vectoring Turbines, SPECTRA optronic defense, and RBE2 3D multi-target AESA radar.',
+    cost: 250000000, // Rp 250 Juta
+    requiredRank: 'Mayor Pnb',
+    requiredRankLevel: 4,
+    minFlightHours: 50.0,
+    requiredHangarLevel: 3,
+    statBoosts: {
+      maxSpeed: 'Mach 2.25 (+0.25 Mach)',
+      cruiseSpeedBoost: 50,
+      rangeBoost: '+650 NM',
+      ceiling: '58,000 ft (+6,000 ft)',
+      radarType: 'Thales RBE2 / Irbis-E Hybrid Quantum AESA',
+      stealthRCS: 'Frontal RCS < 0.1 m² (Semi-Stealth)',
+      gLimits: '+10.5G Super-Maneuverable'
+    },
+    keyFeatures: [
+      'Nozel Mesin 3D Thrust Vectoring (Maneuver Cobra)',
+      'Sistem Pertahanan Terintegrasi SPECTRA 360°',
+      'Integrasi Rudal MBDA Meteor & SCALP-EG',
+      'Conformal Fuel Tanks (CFT) Built-in Integration'
+    ]
+  },
+  {
+    id: 'gen_5_stealth_dominance',
+    targetGeneration: '5.0',
+    generationBadge: 'GEN 5.0 STEALTH DOMINANCE',
+    titleId: 'Konversi Generasi 5.0 (Stealth VLO Air Dominance)',
+    titleEn: 'Generation 5.0 Stealth Air Dominance Conversion',
+    targetNameSuffix: 'Stealth Air Dominance (VLO)',
+    descriptionId: 'Pelapisan Radar-Absorbing Material (RAM Gen 5), ruang senjata internal bertekanan pneumatik, sensor 360 DAS, dan Supercruise tanpa afterburner.',
+    descriptionEn: 'Radar-Absorbing Material (RAM Gen 5), internal weapons bays, 360 Distributed Aperture System (DAS), and dry Supercruise.',
+    cost: 500000000, // Rp 500 Juta
+    requiredRank: 'Letkol Pnb',
+    requiredRankLevel: 5,
+    minFlightHours: 100.0,
+    requiredHangarLevel: 3,
+    statBoosts: {
+      maxSpeed: 'Mach 2.25 (Mach 1.6 Dry Supercruise)',
+      cruiseSpeedBoost: 80,
+      rangeBoost: '+900 NM',
+      ceiling: '65,000 ft (+15,000 ft)',
+      radarType: 'AN/APG-81 / N036 Byelka Multi-Band Stealth AESA',
+      stealthRCS: 'Very Low Observable (RCS < 0.001 m²)',
+      gLimits: '+9.5G Fly-by-Light Optical Control'
+    },
+    keyFeatures: [
+      'Radar Absorbing Material (RAM) Generasi 5',
+      'Internal Weapons Bay (Siluman Radar Total)',
+      '360° Electro-Optical DAS & Helmet Display Gen 3',
+      'Dry Supercruise Mach 1.6 (Hemat Bahan Bakar)'
+    ]
+  },
+  {
+    id: 'gen_6_ngad_loyal_wingman',
+    targetGeneration: '6.0',
+    generationBadge: 'GEN 6.0 NGAD & AI WINGMAN',
+    titleId: 'Evolusi Generasi 6.0 (Next-Gen Air Dominance & Loyal Wingman AI)',
+    titleEn: 'Generation 6.0 NGAD & Autonomous AI Swarm Evolution',
+    targetNameSuffix: 'NGAD Cyber-Dominance',
+    descriptionId: 'Propulsi Adaptive Cycle Turbofan (ACE), pertahanan laser Direct Energy Weapon (DEW), dan komando swarm drone tempur otonom Loyal Wingman.',
+    descriptionEn: 'Adaptive Cycle Turbofan (ACE), Directed Energy Weapon (DEW) laser pod, and autonomous AI Loyal Wingman swarm command.',
+    cost: 850000000, // Rp 850 Juta
+    requiredRank: 'Kolonel Pnb',
+    requiredRankLevel: 6,
+    minFlightHours: 180.0,
+    requiredHangarLevel: 4,
+    statBoosts: {
+      maxSpeed: 'Mach 2.80 (Mach 2.0 Dry Supercruise)',
+      cruiseSpeedBoost: 120,
+      rangeBoost: '+1,400 NM',
+      ceiling: '72,000 ft (Near-Space Suborbital)',
+      radarType: 'Cognitive Quantum-Resistant Multi-Domain Sensor Array',
+      stealthRCS: 'Broadband All-Aspect Stealth (RCS < 0.0001 m²)',
+      gLimits: '+12.0G Neural Interface Bio-G'
+    },
+    keyFeatures: [
+      'Mesin Adaptive Cycle Turbofan (Efisiensi +40%)',
+      'Loyal Wingman AI Drone Swarm Tactical Link',
+      'High-Energy Laser Pod (DEW) Anti-Missile Defense',
+      'Quantum-Encrypted Cyber & Multi-Domain Mesh C2'
+    ]
+  }
+];
 
 export const HANGAR_LEVELS: FacilityState[] = [
   {

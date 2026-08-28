@@ -75,8 +75,72 @@ export interface OwnedAircraft {
     labelEn: string;
     color: string;
   };
+  generationTier?: '4.0' | '4.5' | '4++' | '5.0' | '5.5' | '6.0';
+  generationBadge?: string;
+  upgradesApplied?: string[];
   purchasePrice?: number;
   purchasedAt?: number;
+}
+
+export type WeaponCategory = 
+  | 'air_to_air' 
+  | 'air_to_ground' 
+  | 'anti_ship' 
+  | 'long_range' 
+  | 'sead' 
+  | 'pod' 
+  | 'fuel_tank' 
+  | 'cannon';
+
+export interface WeaponItem {
+  id: string;
+  name: string;
+  category: WeaponCategory;
+  categoryLabelId: string;
+  categoryLabelEn: string;
+  descriptionId: string;
+  descriptionEn: string;
+  price: number;
+  isDefault: boolean;
+  weightLbs: number;
+  fuelCapacityGal?: number;
+  fuelCapacityLbs?: number;
+  rangeBonusNm?: number;
+  missionSuitability: ('CAP' | 'CAS' | 'MARITIME' | 'SEAD' | 'STANDOFF' | 'FERRY' | 'RECON')[];
+  hardpointStations: ('wingtip' | 'outboard' | 'inboard' | 'centerline' | 'conformal' | 'internal')[];
+  iconType?: string;
+  specs: {
+    range?: string;
+    guidance?: string;
+    speed?: string;
+    warhead?: string;
+  };
+}
+
+export interface AircraftGenerationUpgrade {
+  id: string;
+  targetGeneration: '4.5' | '4++' | '5.0' | '5.5' | '6.0';
+  generationBadge: string;
+  titleId: string;
+  titleEn: string;
+  targetNameSuffix: string;
+  descriptionId: string;
+  descriptionEn: string;
+  cost: number;
+  requiredRank: string;
+  requiredRankLevel: number; // 1: Letda, 2: Lettu, 3: Kapten, 4: Mayor, 5: Letkol, 6: Kolonel, 7: Marsma
+  minFlightHours: number;
+  requiredHangarLevel: number;
+  statBoosts: {
+    maxSpeed: string;
+    cruiseSpeedBoost: number; // knots
+    rangeBoost: string;
+    ceiling: string;
+    radarType: string;
+    stealthRCS: string;
+    gLimits: string;
+  };
+  keyFeatures: string[];
 }
 
 export interface CrewDepartment {

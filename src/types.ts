@@ -57,6 +57,64 @@ export interface Crew {
   cabinCount: number;
 }
 
+export interface OwnedAircraft {
+  id: string;
+  tailNumber: string;
+  aircraft: Aircraft;
+  flightHours: number;
+  health: {
+    airframe: number; // 0-100
+    engine: number; // 0-100
+    hydraulics: number; // 0-100
+    avionics: number; // 0-100
+    fuelSystem: number; // 0-100
+  };
+  status: {
+    code: 'READY' | 'SCRAMBLE' | 'MAINTENANCE' | 'STANDBY';
+    labelId: string;
+    labelEn: string;
+    color: string;
+  };
+  purchasePrice?: number;
+  purchasedAt?: number;
+}
+
+export interface CrewDepartment {
+  nameId: string;
+  nameEn: string;
+  count: number;
+  level: number;
+  costPerUpgrade: number;
+  descriptionId: string;
+  descriptionEn: string;
+  role: string;
+}
+
+export interface SquadronCrewRoster {
+  flightCrew: {
+    count: number;
+    pilot: string;
+    coPilot: string;
+    callSign: string;
+  };
+  groundCrew: CrewDepartment;
+  technicians: CrewDepartment;
+  fuelCrew: CrewDepartment;
+  electricCrew: CrewDepartment;
+}
+
+export interface FacilityState {
+  level: number;
+  capacity: number;
+  maxLevel: number;
+  upgradeCost: number;
+  titleId: string;
+  titleEn: string;
+  descriptionId: string;
+  descriptionEn: string;
+  features: string[];
+}
+
 export interface PlayerProfile {
   email: string;
   commanderName: string;

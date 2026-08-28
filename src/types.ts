@@ -159,12 +159,44 @@ export type ReconMissionPhase =
   | 'strike_rtb'
   | 'mission_completed';
 
+export type TacticalReconMission =
+  | 'Air Superiority'
+  | 'Air Defense / Intercept'
+  | 'Combat Air Patrol (CAP)'
+  | 'Barrier CAP'
+  | 'Escort'
+  | 'VVIP Air Escort'
+  | 'Strike'
+  | 'Close Air Support (CAS)'
+  | 'SEAD'
+  | 'DEAD'
+  | 'Anti-Ship'
+  | 'Maritime Patrol / Interdiction'
+  | 'Reconnaissance'
+  | 'Armed Reconnaissance'
+  | 'Tactical Interdiction'
+  | 'Show of Force'
+  | 'Air Policing'
+  | 'Scramble'
+  | 'Tanker Escort'
+  | 'Recovery Escort'
+  | 'Rescue / CSAR Escort'
+  | 'Training / Exercise'
+  | 'Flight pass';
+
 export type ReconThreatType =
-  | 'enemy_fighter'
   | 'enemy_warship'
+  | 'aircraft_carrier'
+  | 'frigate'
   | 'enemy_submarine'
-  | 'insurgents'
+  | 'naval_drone'
+  | 'enemy_fighter'
+  | 'guerrilla_base'
   | 'anti_air_sam'
+  | 'missile_base'
+  | 'radar_station'
+  | 'enemy_fighter_land'
+  | 'insurgents'
   | 'radar_installation';
 
 export type ReconCommandAction =
@@ -177,6 +209,8 @@ export interface ReconIntelTarget {
   id: string;
   name: string;
   type: ReconThreatType;
+  environment: 'sea' | 'land';
+  assignedMission: TacticalReconMission | string;
   lat: number;
   lng: number;
   altitudeFt?: number;

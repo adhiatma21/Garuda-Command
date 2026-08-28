@@ -25,6 +25,11 @@ export interface CommsState {
   vvipDialogueIndex: number;
   lastReconDialogueTime: number;
   reconDialogueIndex: number;
+  lastReportedTargetId: string | null;
+  hasReportedTargetLock: boolean;
+  lastTargetLockReportTime: number;
+  lastStrikeEnrouteDialogueTime: number;
+  strikeEnrouteDialogueIndex: number;
   lastWeatherEventTime: number;
   lastAltitudeChangeTime: number;
   lastHeadingInstructionTime: number;
@@ -52,6 +57,11 @@ export function createInitialCommsState(): CommsState {
     vvipDialogueIndex: 0,
     lastReconDialogueTime: 0,
     reconDialogueIndex: 0,
+    lastReportedTargetId: null,
+    hasReportedTargetLock: false,
+    lastTargetLockReportTime: 0,
+    lastStrikeEnrouteDialogueTime: 0,
+    strikeEnrouteDialogueIndex: 0,
     lastWeatherEventTime: 0,
     lastAltitudeChangeTime: 0,
     lastHeadingInstructionTime: 0,
@@ -847,11 +857,6 @@ export function generatePeriodicReconComms(
   const timeSinceLastSpoken = (now - updatedState.lastSpokenTime) / 1000;
   const timeSinceLastReconDialogue = (now - updatedState.lastReconDialogueTime) / 1000;
 
-  // High intensity: trigger lively tactical ISR chatter every 9-12 seconds of flight
-  if (timeSinceLastReconDialogue < 10 || timeSinceLastSpoken < 5) {
-    return { messages, updatedState };
-  }
-
   const timeStr = new Date().toTimeString().substring(0, 5) + 'Z';
   const reconCallsign = selectedRecon.name.toUpperCase().includes('ANKA')
     ? 'ANKA-ISR 01'
@@ -876,68 +881,15 @@ export function generatePeriodicReconComms(
   const posLatStr = curPos ? curPos.lat.toFixed(3) : '0.000';
   const posLngStr = curPos ? curPos.lng.toFixed(3) : '0.000';
 
-  const idx = updatedState.reconDialogueIndex % 6;
-  updatedState.reconDialogueIndex += 1;
-  updatedState.lastReconDialogueTime = now;
-  updatedState.lastSpokenTime = now;
+  // 1. TARGET DETECTED / INTEL ACQUIRED (Trigger ONLY ONCE per newly acquired target)
+  const activeTargets = reconState.detectedTargets || [];
+  const latestTarget = activeTargets[activeTargets.length - 1];
 
-  // 1. STRIKE ENGAGEMENT / TARGET LOCKED ACTIVE
-  if (isTargetLocked && !isStrikeCompleted) {
-    messages.push({
-      id: 'recon-lock-1-' + now,
-      timestamp: timeStr,
-      sender: 'RECON',
-      callsign: reconCallsign,
-      frequency: '123.45 MHz',
-      type: 'RECON',
-      textId: `${callsign}, ${reconCallsign}! Laser designation spot 1688 terkunci stabil di koordinat sasaran. Wilayah aman dari populasi sipil, otorisasi penembakan penuh!`,
-      textEn: `${callsign}, ${reconCallsign}! Laser designation code 1688 locked on target. Area clear of non-combatants, weapons free authorized!`
-    });
-    messages.push({
-      id: 'recon-lock-2-' + now,
-      timestamp: timeStr,
-      sender: 'TOWER',
-      callsign: `${depIcao} TOWER`,
-      frequency: '128.20 MHz',
-      type: 'RECON',
-      textId: `Semua stasiun, ${depIcao} Tower. Koridor tembak steril di FL${Math.round(currentAlt / 100)}. ${callsign} diizinkan melepaskan munisi presisi.`,
-      textEn: `All stations, ${depIcao} Tower. Strike box sanitized at FL${Math.round(currentAlt / 100)}. ${callsign} cleared to release precision ordnance.`
-    });
-    return { messages, updatedState };
-  }
+  if (latestTarget && updatedState.lastReportedTargetId !== latestTarget.id && timeSinceLastSpoken >= 2) {
+    updatedState.lastReportedTargetId = latestTarget.id;
+    updatedState.lastSpokenTime = now;
+    updatedState.lastReconDialogueTime = now;
 
-  // 2. STRIKE IN PROGRESS / ENROUTE TO TARGET
-  if (reconState.phase === 'strike_enroute') {
-    const target = reconState.detectedTargets[0];
-    const tLat = target ? target.lat.toFixed(3) : posLatStr;
-    const tLng = target ? target.lng.toFixed(3) : posLngStr;
-
-    messages.push({
-      id: 'recon-strike-1-' + now,
-      timestamp: timeStr,
-      sender: 'RECON',
-      callsign: reconCallsign,
-      frequency: '123.45 MHz',
-      type: 'RECON',
-      textId: `${callsign}, ${reconCallsign}. Pod elektro-optik mengunci target di ${tLat}°, ${tLng}°. Sensor mendeteksi radar musuh aktif. Datang dari arah barat daya untuk penetrasi optimal.`,
-      textEn: `${callsign}, ${reconCallsign}. Electro-optical pod tracking target at ${tLat}°, ${tLng}°. Hostile radar emitters detected. Ingress from southwest for optimal penetration.`
-    });
-    messages.push({
-      id: 'recon-strike-2-' + now,
-      timestamp: timeStr,
-      sender: 'PILOT',
-      callsign,
-      frequency: '123.45 MHz',
-      type: 'RECON',
-      textId: `${reconCallsign}, ${callsign} copy! Membuka kecepatan tempur 480 knot, sistem pemandu senjata aktif dan siap mengunci sasaran.`,
-      textEn: `${reconCallsign}, ${callsign} copies! Pushing combat airspeed 480 knots, weapons guidance hot and slaved to your target track.`
-    });
-    return { messages, updatedState };
-  }
-
-  // 3. TARGET DETECTED / INTEL ACQUIRED
-  if (reconState.phase === 'intel_acquired' || reconState.detectedTargets.length > 0) {
-    const target = reconState.detectedTargets[0];
     messages.push({
       id: 'recon-intel-1-' + now,
       timestamp: timeStr,
@@ -945,8 +897,8 @@ export function generatePeriodicReconComms(
       callsign: reconCallsign,
       frequency: '123.45 MHz',
       type: 'RECON',
-      textId: `MAYDAY / TACTICAL ALERT! ${reconCallsign} mendeteksi kontak mencurigakan: [${target?.name || 'TARGET TAKTIS'}] di posisi ${target?.lat.toFixed(3) || posLatStr}°, ${target?.lng.toFixed(3) || posLngStr}°. Mengirimkan telemetri Link-16 ke ${callsign}!`,
-      textEn: `TACTICAL ALERT! ${reconCallsign} acquires confirmed contact: [${target?.name || 'TACTICAL TARGET'}] at ${target?.lat.toFixed(3) || posLatStr}°, ${target?.lng.toFixed(3) || posLngStr}°. Broadcasting Link-16 telemetry to ${callsign}!`
+      textId: `TACTICAL ALERT! ${reconCallsign} mendeteksi sasaran baru: [${latestTarget.name}] di koordinat ${latestTarget.lat.toFixed(3)}°, ${latestTarget.lng.toFixed(3)}°. Mengirimkan telemetri Link-16 ke ${callsign}!`,
+      textEn: `TACTICAL ALERT! ${reconCallsign} acquired new contact: [${latestTarget.name}] at coords ${latestTarget.lat.toFixed(3)}°, ${latestTarget.lng.toFixed(3)}°. Broadcasting Link-16 telemetry to ${callsign}!`
     });
     messages.push({
       id: 'recon-intel-2-' + now,
@@ -955,13 +907,145 @@ export function generatePeriodicReconComms(
       callsign: `GARUDA SEKTOR`,
       frequency: '128.20 MHz',
       type: 'RECON',
-      textId: `${reconCallsign} dan ${callsign}, Garuda Sektor menerima data intel. Komando Pertahanan Udara menyatakan status SIAGA-1. Otorisasi scramble tempur diberikan.`,
-      textEn: `${reconCallsign} and ${callsign}, Garuda Sector receives intel packet. Air Defense Command declares DEFCON-1 readiness. Strike scramble authorized.`
+      textId: `${reconCallsign} dan ${callsign}, Garuda Sektor menerima data intel sasaran. Status SIAGA-1 diaktifkan. Otorisasi scramble tempur diberikan.`,
+      textEn: `${reconCallsign} and ${callsign}, Garuda Sector received target intel packet. DEFCON-1 activated. Strike scramble authorized.`
     });
     return { messages, updatedState };
   }
 
-  // 4. ROUTINE ENROUTE ISR SURVEY CHATTER (Lively multi-way exchanges)
+  // 2. STRIKE ENGAGEMENT / TARGET LOCKED ACTIVE (Trigger ONLY ONCE per lock event)
+  if (isTargetLocked && !isStrikeCompleted) {
+    if (!updatedState.hasReportedTargetLock && (now - updatedState.lastTargetLockReportTime) > 20000) {
+      updatedState.hasReportedTargetLock = true;
+      updatedState.lastTargetLockReportTime = now;
+      updatedState.lastSpokenTime = now;
+      updatedState.lastReconDialogueTime = now;
+
+      messages.push({
+        id: 'recon-lock-1-' + now,
+        timestamp: timeStr,
+        sender: 'RECON',
+        callsign: reconCallsign,
+        frequency: '123.45 MHz',
+        type: 'RECON',
+        textId: `${callsign}, ${reconCallsign}! Laser designation spot 1688 terkunci stabil di koordinat sasaran. Sektor aman, otorisasi penembakan penuh (Weapons Free)!`,
+        textEn: `${callsign}, ${reconCallsign}! Laser designation code 1688 locked on target. Corridor clean, weapons free authorized!`
+      });
+      messages.push({
+        id: 'recon-lock-2-' + now,
+        timestamp: timeStr,
+        sender: 'TOWER',
+        callsign: `${depIcao} TOWER`,
+        frequency: '128.20 MHz',
+        type: 'RECON',
+        textId: `Semua stasiun, ${depIcao} Tower. Koridor tembak tempur steril di FL${Math.round(currentAlt / 100)}. ${callsign} diizinkan melepaskan munisi presisi.`,
+        textEn: `All stations, ${depIcao} Tower. Strike box sanitized at FL${Math.round(currentAlt / 100)}. ${callsign} cleared to release precision ordnance.`
+      });
+      return { messages, updatedState };
+    }
+  } else if (!isTargetLocked) {
+    updatedState.hasReportedTargetLock = false;
+  }
+
+  // Pacing for remaining periodic chatter: spaced by at least 18-24 seconds
+  if (timeSinceLastReconDialogue < 18 || timeSinceLastSpoken < 8) {
+    return { messages, updatedState };
+  }
+
+  // 3. STRIKE IN PROGRESS / ENROUTE TO TARGET (Varied dynamic callouts)
+  if (reconState.phase === 'strike_enroute') {
+    const uneliminatedTarget = activeTargets.find(t => !t.isEliminated) || activeTargets[0];
+    const tLat = uneliminatedTarget ? uneliminatedTarget.lat.toFixed(3) : posLatStr;
+    const tLng = uneliminatedTarget ? uneliminatedTarget.lng.toFixed(3) : posLngStr;
+    const tName = uneliminatedTarget ? uneliminatedTarget.name : 'SASARAN INTEL';
+
+    const strikeIdx = updatedState.strikeEnrouteDialogueIndex % 3;
+    updatedState.strikeEnrouteDialogueIndex += 1;
+    updatedState.lastStrikeEnrouteDialogueTime = now;
+    updatedState.lastReconDialogueTime = now;
+    updatedState.lastSpokenTime = now;
+
+    switch (strikeIdx) {
+      case 0:
+        messages.push({
+          id: 'recon-strike-1-' + now,
+          timestamp: timeStr,
+          sender: 'RECON',
+          callsign: reconCallsign,
+          frequency: '123.45 MHz',
+          type: 'RECON',
+          textId: `${callsign}, ${reconCallsign}. Pod elektro-optik mengunci sasaran [${tName}] di ${tLat}°, ${tLng}°. Pertahankan penetrasi koridor serangan.`,
+          textEn: `${callsign}, ${reconCallsign}. Electro-optical pod slaved to [${tName}] at ${tLat}°, ${tLng}°. Maintain ingress vector.`
+        });
+        messages.push({
+          id: 'recon-strike-2-' + now,
+          timestamp: timeStr,
+          sender: 'PILOT',
+          callsign,
+          frequency: '123.45 MHz',
+          type: 'RECON',
+          textId: `${reconCallsign}, ${callsign} copy! Kecepatan tempur stabil, komputer balistik senjata online dan memindai sasaran.`,
+          textEn: `${reconCallsign}, ${callsign} copies! Combat speed steady, weapons fire-control online and acquiring target.`
+        });
+        break;
+
+      case 1:
+        messages.push({
+          id: 'recon-strike-3-' + now,
+          timestamp: timeStr,
+          sender: 'RECON',
+          callsign: reconCallsign,
+          frequency: '123.45 MHz',
+          type: 'RECON',
+          textId: `Garuda Sektor, ${reconCallsign}. Laser rangefinder mengonfirmasi jarak elevasi sasaran optimal. Angin permukaan 090/08kt, kondisi balistik prima.`,
+          textEn: `Garuda Sector, ${reconCallsign}. Laser rangefinder confirms optimal target altitude slant. Surface winds 090/08kt, ballistic profile pristine.`
+        });
+        messages.push({
+          id: 'recon-strike-4-' + now,
+          timestamp: timeStr,
+          sender: 'TOWER',
+          callsign: `GARUDA COMMAND`,
+          frequency: '128.20 MHz',
+          type: 'RECON',
+          textId: `${callsign}, Garuda Command. Koridor serangan bebas hambatan. Selesaikan sasaran dengan presisi tinggi.`,
+          textEn: `${callsign}, Garuda Command. Strike corridor cleared. Neutralize target with surgical precision.`
+        });
+        break;
+
+      case 2:
+      default:
+        messages.push({
+          id: 'recon-strike-5-' + now,
+          timestamp: timeStr,
+          sender: 'PILOT',
+          callsign,
+          frequency: '123.45 MHz',
+          type: 'RECON',
+          textId: `${reconCallsign}, ${callsign} mendekati zona tembak efektif. Master Arm ON, sensor rudal siap melakukan lock-on otomatis!`,
+          textEn: `${reconCallsign}, ${callsign} inbound to terminal engagement zone. Master Arm ON, seeker slaved for lock-on!`
+        });
+        messages.push({
+          id: 'recon-strike-6-' + now,
+          timestamp: timeStr,
+          sender: 'RECON',
+          callsign: reconCallsign,
+          frequency: '123.45 MHz',
+          type: 'RECON',
+          textId: `${callsign}, ${reconCallsign} memandu laser paint. Siap konfirmasi dampak kehancuran (BDA) pasca tembakan!`,
+          textEn: `${callsign}, ${reconCallsign} painting laser spot. Standing by for immediate Bomb Damage Assessment (BDA)!`
+        });
+        break;
+    }
+
+    return { messages, updatedState };
+  }
+
+  // 4. ROUTINE ENROUTE ISR SURVEY CHATTER (Smooth rotation across 6 scenarios)
+  const idx = updatedState.reconDialogueIndex % 6;
+  updatedState.reconDialogueIndex += 1;
+  updatedState.lastReconDialogueTime = now;
+  updatedState.lastSpokenTime = now;
+
   switch (idx) {
     case 0:
       // FLIR & Multispectral Sensor Sweep

@@ -40,34 +40,38 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
   };
 
   const quickPresets = language === 'id' ? [
-    { label: '✈️ Formasi Terkunci', text: 'Indonesia-01, formasi sayap pengawalan terkunci stabil di 0.3 NM. Kecepatan dan elevasi sinkron.' },
-    { label: '🛡️ Radar 360° Aman', text: 'Indonesia-01, radar sapuan 360 derajat bersih. Koridor udara aman tanpa ancaman.' },
-    { label: '⛽ Status Bahan Bakar', text: 'Garuda Control, lapor status bahan bakar dan kesiapan sistem mesin dalam kondisi optimal.' },
-    { label: '🌧️ Info Cuaca & Awan', text: 'Garuda Control, meminta pembaruan radar cuaca sektor penerbangan depan.' },
-    { label: '🛬 Ijin Landing Final', text: 'Garuda Approach, meminta izin persiapan pendekatan pendaratan dan prioritas runway.' },
-    { label: '📻 Radio Check 5x5', text: 'Indonesia-01 dan Garuda Radar, radio check 5 per 5 kuat dan jelas.' }
+    { label: '📡 Lapor Kontak Intel', text: 'Garuda Sektor & Pesawat Intai, lapor status deteksi kontak radar dan sensor optik di wilayah operasi.' },
+    { label: '🎯 Konfirmasi Target & Laser', text: 'Pesawat Intai, konfirmasi titik koordinat sasaran dan status pancaran laser penanda target.' },
+    { label: '🚀 Ijin Tembak & Pelepasan Rudal', text: 'Garuda Tower & Sektor, meminta izin pelepasan munisi presisi terhadap target teridentifikasi.' },
+    { label: '✈️ Formasi Pengawalan Terkunci', text: 'Indonesia-01, formasi sayap pengawalan terkunci stabil di 0.3 NM. Kecepatan dan elevasi sinkron.' },
+    { label: '🛡️ Radar 360° Sektor Aman', text: 'Garuda Sektor, radar sapuan 360 derajat bersih. Koridor kedaulatan udara aman tanpa ancaman.' },
+    { label: '⛽ Cek BBM & Sistem Tempur', text: 'Garuda Control, lapor status bahan bakar internal dan kesiapan sistem mesin dalam kondisi optimal.' },
+    { label: '🛬 Ijin Pendaratan Runway Pangkalan', text: 'Garuda Approach, meminta izin persiapan pendekatan pendaratan dan prioritas runway aktif.' },
+    { label: '📻 Radio Check 5x5', text: 'Garuda Tower dan Pesawat Intai, radio check 5 per 5 kuat dan jelas di frekuensi taktis.' }
   ] : [
+    { label: '📡 Report Recon Intel', text: 'Garuda Sector & Recon, report current radar sweep and electro-optical sensor contacts in operational box.' },
+    { label: '🎯 Confirm Target & Laser Spot', text: 'Recon Intel, confirm target coordinates telemetry and laser designator spot lock.' },
+    { label: '🚀 Weapons Release Clearance', text: 'Garuda Tower & Sector, requesting clearance for precision weapons release on designated hostile target.' },
     { label: '✈️ Formation Locked', text: 'Indonesia-01, escort wing station locked steady at 0.3 NM. Speed and altitude synced.' },
-    { label: '🛡️ Sector Clear 360°', text: 'Indonesia-01, 360-degree radar sweep clean. Air corridor is secure.' },
-    { label: '⛽ Fuel & Systems Check', text: 'Garuda Control, reporting fuel state and engine performance nominal.' },
-    { label: '🌧️ Weather Update', text: 'Garuda Control, requesting en-route weather radar and convective cloud update.' },
-    { label: '🛬 Landing Clearance', text: 'Garuda Approach, requesting descent and priority landing clearance for arrival runway.' },
-    { label: '📻 Radio Check 5x5', text: 'Indonesia-01 and Garuda Radar, radio check 5 by 5 loud and clear.' }
+    { label: '🛡️ Sector Clear 360°', text: 'Garuda Sector, 360-degree radar sweep clean. Air corridor is secure.' },
+    { label: '⛽ Fuel & Systems Check', text: 'Garuda Control, reporting fuel state and combat systems performance nominal.' },
+    { label: '🛬 Landing Priority Clearance', text: 'Garuda Approach, requesting descent and priority landing clearance for active runway.' },
+    { label: '📻 Radio Check 5x5', text: 'Garuda Tower and Recon Intel, radio check 5 by 5 loud and clear on tactical frequency.' }
   ];
 
   return (
-    <div className="absolute top-6 left-6 z-[2000] pointer-events-auto max-w-[420px] w-full">
+    <div className="absolute top-6 left-6 z-[2000] pointer-events-auto max-w-[440px] w-full">
       <div className="bg-black/90 backdrop-blur-xl border border-blue-500/40 rounded-xl shadow-2xl overflow-hidden ring-1 ring-blue-500/20">
         {/* Header Bar */}
         <div 
           onClick={() => setIsExpanded(!isExpanded)}
-          className="px-3.5 py-2 bg-gradient-to-r from-blue-950/95 to-slate-900/95 border-b border-blue-500/30 flex items-center justify-between cursor-pointer hover:bg-blue-900/40 transition-colors"
+          className="px-3.5 py-2 bg-gradient-to-r from-blue-950/95 via-slate-900/95 to-indigo-950/95 border-b border-blue-500/30 flex items-center justify-between cursor-pointer hover:bg-blue-900/40 transition-colors"
         >
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${isTransmitting ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-ping'}`} />
             <Radio className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-[9px] font-black text-blue-200 uppercase tracking-widest flex items-center gap-1.5">
-              {language === 'id' ? 'KOMUNIKASI RADIO DUA ARAH (ATC & VVIP)' : '2-WAY RADIO COMMS (ATC & VVIP)'}
+              {language === 'id' ? 'KOMUNIKASI RADIO TAKTIS (TOWER, PESAWAT INTAI & PILOT)' : 'TACTICAL RADIO COMMS (TOWER, RECON & PILOT)'}
               {isTransmitting && (
                 <span className="text-[7.5px] px-1.5 py-0.2 bg-amber-500 text-black font-black rounded animate-pulse">
                   TX TRANSMITTING
@@ -100,7 +104,9 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                 <div className="flex items-center justify-between text-[8px] font-mono">
                   <div className="flex items-center gap-1.5">
                     <span className={`px-1.5 py-0.5 rounded font-black tracking-wider text-[7px] ${
-                      latestMessage.sender === 'ATC' 
+                      latestMessage.sender === 'RECON'
+                        ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                        : latestMessage.sender === 'TOWER' || latestMessage.sender === 'ATC' 
                         ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40' 
                         : latestMessage.sender === 'VVIP'
                         ? 'bg-rose-500/25 text-rose-300 border border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]'
@@ -108,7 +114,17 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                         ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40'
                         : 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/40'
                     }`}>
-                      {latestMessage.sender === 'VVIP' ? '★ VIP' : latestMessage.sender} : {latestMessage.callsign}
+                      {latestMessage.sender === 'RECON'
+                        ? '📡 INTAI / RECON'
+                        : latestMessage.sender === 'TOWER'
+                        ? '🗼 TOWER / CONTROL'
+                        : latestMessage.sender === 'ATC'
+                        ? '🗼 RADAR / ATC'
+                        : latestMessage.sender === 'VVIP'
+                        ? '★ VVIP VIP'
+                        : latestMessage.sender === 'AWACS'
+                        ? '🛰️ AWACS'
+                        : '✈️ PILOT'} : {latestMessage.callsign}
                     </span>
                     <span className="text-white/40">{latestMessage.timestamp}</span>
                   </div>
@@ -118,7 +134,7 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                       onClick={(e) => {
                         e.stopPropagation();
                         const text = language === 'id' ? latestMessage.textId : latestMessage.textEn;
-                        onReplayAudio(text, latestMessage.sender === 'ATC' || latestMessage.sender === 'AWACS');
+                        onReplayAudio(text, latestMessage.sender === 'ATC' || latestMessage.sender === 'TOWER' || latestMessage.sender === 'AWACS');
                       }}
                       className="p-1 text-white/40 hover:text-cyan-400 hover:bg-white/5 rounded transition-all"
                       title={language === 'id' ? 'Putar Ulang Audio Radio' : 'Replay Radio Audio'}
@@ -129,9 +145,11 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                 </div>
 
                 <p className={`text-[9.5px] font-mono font-semibold leading-relaxed tracking-tight pl-1.5 border-l-2 ${
-                  latestMessage.sender === 'VVIP' 
+                  latestMessage.sender === 'RECON'
+                    ? 'text-emerald-200 border-emerald-500/70 bg-emerald-950/20 py-0.5 rounded-r'
+                    : latestMessage.sender === 'VVIP' 
                     ? 'text-rose-200 border-rose-500/70 bg-rose-950/20 py-0.5 rounded-r' 
-                    : latestMessage.sender === 'ATC'
+                    : latestMessage.sender === 'ATC' || latestMessage.sender === 'TOWER'
                     ? 'text-amber-200 border-amber-500/70'
                     : latestMessage.sender === 'PILOT'
                     ? 'text-cyan-200 border-cyan-500/70'
@@ -164,8 +182,8 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                     }}
                     placeholder={
                       language === 'id' 
-                        ? 'Ketik pesan radio (contoh: "Indonesia-01, formasi aman")...' 
-                        : 'Type radio message (e.g. "Indonesia-01, formation secure")...'
+                        ? 'Ketik transmisi radio (contoh: "Pesawat Intai, lapor status sasaran")...' 
+                        : 'Type radio message (e.g. "Recon Intel, report target status")...'
                     }
                     className="w-full bg-slate-900/90 border border-blue-500/30 rounded-lg px-2.5 py-1.5 text-[9px] font-mono text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 transition-all pr-7"
                   />
@@ -209,16 +227,18 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                 <div className="text-[7px] uppercase tracking-widest text-white/40 font-bold flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     <MessageSquareText className="w-2.5 h-2.5 text-blue-400" />
-                    <span>{language === 'id' ? 'TRANSKRIP DUA ARAH TERAKHIR' : 'RECENT 2-WAY TRANSCRIPT'}</span>
+                    <span>{language === 'id' ? 'TRANSKRIP RADIO 3-ARAH TERAKHIR' : 'RECENT 3-WAY RADIO TRANSCRIPT'}</span>
                   </div>
                   <span className="text-[6.5px] text-white/30">{messages.length} log</span>
                 </div>
 
-                {messages.slice(-8).reverse().map((msg, idx) => (
+                {messages.slice(-10).reverse().map((msg, idx) => (
                   <div key={`comm-msg-${msg.id}-${idx}`} className={`p-2 rounded border space-y-0.5 ${
-                    msg.sender === 'VVIP' 
+                    msg.sender === 'RECON'
+                      ? 'bg-emerald-950/30 border-emerald-500/30'
+                      : msg.sender === 'VVIP' 
                       ? 'bg-rose-950/30 border-rose-500/30' 
-                      : msg.sender === 'ATC'
+                      : msg.sender === 'ATC' || msg.sender === 'TOWER'
                       ? 'bg-amber-950/20 border-amber-500/20'
                       : msg.sender === 'PILOT'
                       ? 'bg-cyan-950/20 border-cyan-500/20'
@@ -226,7 +246,9 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                   }`}>
                     <div className="flex justify-between items-center text-[7px] font-mono">
                       <span className={`font-bold flex items-center gap-1 ${
-                        msg.sender === 'ATC' 
+                        msg.sender === 'RECON'
+                          ? 'text-emerald-400'
+                          : msg.sender === 'ATC' || msg.sender === 'TOWER'
                           ? 'text-amber-400' 
                           : msg.sender === 'VVIP' 
                           ? 'text-rose-400' 
@@ -234,7 +256,7 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                           ? 'text-cyan-300'
                           : 'text-purple-400'
                       }`}>
-                        [{msg.timestamp}] {msg.sender === 'VVIP' ? '★ VIP' : msg.sender}: {msg.callsign}
+                        [{msg.timestamp}] {msg.sender === 'RECON' ? '📡 RECON' : msg.sender === 'TOWER' ? '🗼 TOWER' : msg.sender === 'ATC' ? '🗼 ATC' : msg.sender === 'VVIP' ? '★ VIP' : '✈️ PILOT'}: {msg.callsign}
                       </span>
                       <div className="flex items-center gap-1">
                         <span className="text-white/30 text-[6px]">{msg.frequency}</span>
@@ -242,7 +264,7 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
                           <button
                             onClick={() => {
                               const text = language === 'id' ? msg.textId : msg.textEn;
-                              onReplayAudio(text, msg.sender === 'ATC' || msg.sender === 'AWACS');
+                              onReplayAudio(text, msg.sender === 'ATC' || msg.sender === 'TOWER' || msg.sender === 'AWACS');
                             }}
                             className="p-0.5 text-white/30 hover:text-cyan-300 transition-colors"
                           >

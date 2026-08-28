@@ -427,8 +427,8 @@ export const FlightTab: React.FC<FlightTabProps> = ({
         />
       )}
 
-      {/* When mission is NOT General and NOT empty, render specialized config, crew & payload */}
-      {missionType && missionType !== 'General' && (
+      {/* When mission is NOT General, NOT Recon, and NOT empty, render specialized config, crew & payload */}
+      {missionType && missionType !== 'General' && missionType !== 'Recon' && missionType !== 'Reconnaissance' && (
         <>
           {/* Crew Section */}
           <div className="space-y-4">
@@ -486,7 +486,12 @@ export const FlightTab: React.FC<FlightTabProps> = ({
               </div>
             </div>
           </div>
+        </>
+      )}
 
+      {/* Mission Specific Operation and Dynamic Configuration */}
+      {missionType && missionType !== 'General' && (
+        <>
           {/* Mission & Payload Section */}
           <div className="space-y-4">
             <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{language === 'id' ? 'Muatan & Operasi' : 'Payload & Operation'}</h3>

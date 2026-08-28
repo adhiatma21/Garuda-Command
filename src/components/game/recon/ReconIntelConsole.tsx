@@ -221,12 +221,19 @@ export const ReconIntelConsole: React.FC<ReconIntelConsoleProps> = ({
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-red-400" />
             <h4 className="text-[11px] font-black text-white uppercase tracking-wider">
-              {language === 'id' ? 'Laporan Intelijen Sasaran (Recon Intel Feed)' : 'Discovered Intel Targets'}
+              {language === 'id' ? 'Laporan Intelijen Sasaran (Discovered Intel Targets)' : 'Discovered Intel Targets'}
             </h4>
           </div>
-          <span className="text-[9px] font-mono text-cyan-300">
-            {reconState.detectedTargets.length} {language === 'id' ? 'Kontak Terdeteksi' : 'Contacts'}
-          </span>
+          <div className="flex items-center gap-2">
+            {reconState.detectedTargets.length > 1 && (
+              <span className="text-[8px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold">
+                {reconState.detectedTargets.filter(t => t.isEliminated).length} / {reconState.detectedTargets.length} {language === 'id' ? 'SELESAI' : 'DONE'}
+              </span>
+            )}
+            <span className="text-[9px] font-mono text-cyan-300 font-bold">
+              {reconState.detectedTargets.length} {language === 'id' ? 'Sasaran' : 'Targets'}
+            </span>
+          </div>
         </div>
 
         {reconState.detectedTargets.length === 0 ? (
@@ -237,19 +244,20 @@ export const ReconIntelConsole: React.FC<ReconIntelConsoleProps> = ({
             </p>
             <p className="text-[8px] text-white/40">
               {language === 'id' 
-                ? 'Pantau pergerakan pesawat intai di radar. Begitu mencapai titik survey, hasil scan akan muncul di sini.'
-                : 'Monitor recon flight on radar. Upon reaching survey coordinates, threat data will transmit here.'}
+                ? 'Pantau pergerakan pesawat intai di radar. Begitu mencapai titik survey (laut/darat), target dan misi tempur acak akan terdeteksi di sini.'
+                : 'Monitor recon flight on radar. When survey points (sea/land) are reached, randomized tactical missions will appear here.'}
             </p>
           </div>
         ) : (
           <div className="space-y-3">
             {reconState.detectedTargets.map((target, idx) => {
               const isSelected = idx === reconState.activeTargetIndex;
+              const isSea = target.environment === 'sea';
               return (
                 <div
                   key={target.id}
                   className={cn(
-                    "p-3.5 rounded-xl border space-y-2.5 transition-all text-xs font-mono",
+                    "p-3.5 rounded-xl border space-y-2.5 transition-all text-xs font-mono relative overflow-hidden",
                     target.isEliminated
                       ? "bg-emerald-950/30 border-emerald-500/40 text-emerald-200"
                       : isSelected
@@ -257,20 +265,53 @@ export const ReconIntelConsole: React.FC<ReconIntelConsoleProps> = ({
                       : "bg-[#0d1726] border-white/10 text-white/80"
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Crosshair className={cn("w-4 h-4", target.isEliminated ? "text-emerald-400" : "text-red-400")} />
+                  {/* Top Badges: Target Number, Sea/Land, and Threat Level */}
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-red-600/30 border border-red-500/50 flex items-center justify-center text-[7.5px] font-bold text-red-300">
+                        #{idx + 1}
+                      </span>
+                      <Crosshair className={cn("w-3.5 h-3.5", target.isEliminated ? "text-emerald-400" : "text-red-400")} />
                       <span className="font-black text-[11px] text-white uppercase">{target.name}</span>
                     </div>
-                    <span className={cn(
-                      "px-2 py-0.5 rounded text-[8px] font-bold uppercase border",
-                      target.isEliminated
-                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                        : "bg-red-500/20 text-red-300 border-red-500/40 animate-pulse"
-                    )}>
-                      {target.isEliminated ? (language === 'id' ? 'TARGET DILUMPUHKAN' : 'NEUTRALIZED') : target.threatLevel}
-                    </span>
+
+                    <div className="flex items-center gap-1">
+                      {/* Sea / Land Tag */}
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded text-[7.5px] font-bold uppercase border",
+                        isSea 
+                          ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40" 
+                          : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      )}>
+                        {isSea ? (language === 'id' ? '🌊 LAUT' : '🌊 SEA') : (language === 'id' ? '🏔️ DARAT' : '🏔️ LAND')}
+                      </span>
+
+                      {/* Threat Status */}
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[7.5px] font-bold uppercase border",
+                        target.isEliminated
+                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                          : "bg-red-500/20 text-red-300 border-red-500/40 animate-pulse"
+                      )}>
+                        {target.isEliminated ? (language === 'id' ? '✓ DILUMPUHKAN' : '✓ NEUTRALIZED') : target.threatLevel}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Assigned Randomized Tactical Mission Badge */}
+                  {target.assignedMission && (
+                    <div className="p-2 bg-gradient-to-r from-blue-950/80 to-purple-950/80 border border-blue-500/30 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" style={{ animationDuration: '6s' }} />
+                        <span className="text-[8px] font-bold text-white/60 uppercase">
+                          {language === 'id' ? 'Tipe Misi Tempur Terpilih:' : 'Assigned Fighter Mission:'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-black text-amber-300 font-mono tracking-wider bg-black/40 px-2 py-0.5 rounded border border-amber-500/30 uppercase">
+                        🎯 {target.assignedMission}
+                      </span>
+                    </div>
+                  )}
 
                   <p className="text-[8.5px] text-white/70 font-sans leading-relaxed">
                     {language === 'id' ? target.descriptionId : target.descriptionEn}
@@ -283,7 +324,7 @@ export const ReconIntelConsole: React.FC<ReconIntelConsoleProps> = ({
                     </div>
                     <div className="flex justify-between items-center text-white/60">
                       <span>{language === 'id' ? 'Koordinat Target:' : 'Target Coordinates:'}</span>
-                      <span className="text-cyan-300 font-bold">{target.lat.toFixed(4)}, {target.lng.toFixed(4)}</span>
+                      <span className="text-cyan-300 font-bold font-mono">{target.lat.toFixed(4)}, {target.lng.toFixed(4)}</span>
                     </div>
                     <div className="flex justify-between items-center text-white/60">
                       <span>{language === 'id' ? 'Senjata Dianjurkan:' : 'Recommended Loadout:'}</span>
@@ -298,7 +339,7 @@ export const ReconIntelConsole: React.FC<ReconIntelConsoleProps> = ({
                       className="w-full py-2 bg-gradient-to-r from-red-600/40 to-amber-600/40 hover:from-red-600/60 hover:to-amber-600/60 border border-red-500/40 rounded-lg text-[9px] font-black uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1.5"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>{language === 'id' ? 'Gunakan Koordinat & Perintah Ini Untuk Scramble' : 'Load Target Coordinates for Scramble'}</span>
+                      <span>{language === 'id' ? `Pilih Target #${idx + 1} Untuk Scramble` : `Focus Target #${idx + 1} Coordinates`}</span>
                     </button>
                   )}
                 </div>
@@ -306,6 +347,90 @@ export const ReconIntelConsole: React.FC<ReconIntelConsoleProps> = ({
             })}
           </div>
         )}
+      </div>
+
+      {/* 3.5. CREW DATA SECTION (RELOCATED DIRECTLY UNDER DISCOVERED INTEL TARGETS) */}
+      <div className="p-4 bg-gradient-to-br from-[#0c1322] to-[#060a14] border border-blue-500/30 rounded-2xl space-y-3.5 shadow-lg">
+        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-cyan-400" />
+            <h4 className="text-[10.5px] font-black text-cyan-300 uppercase tracking-widest">
+              {language === 'id' ? 'Data Awak Pesawat Tempur (Crew Data)' : 'Fighter Aircraft Crew Data'}
+            </h4>
+          </div>
+          <span className="text-[8px] font-mono font-bold text-white/40 uppercase">
+            {playerCrew.callSign || 'EAGLE-01'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[8.5px] text-white/50 uppercase font-bold tracking-wider">
+                {language === 'id' ? 'Pilot Utama (Captain)' : 'Commanding Pilot'}
+              </label>
+              <input 
+                type="text" 
+                value={playerCrew.pilot}
+                onChange={(e) => onSetPlayerCrew({...playerCrew, pilot: e.target.value})}
+                placeholder="CAPT. ADHIATMA"
+                className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 transition-all"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[8.5px] text-white/50 uppercase font-bold tracking-wider">
+                {language === 'id' ? 'Kopilot (Co-Pilot / WSO)' : 'Co-Pilot / WSO'}
+              </label>
+              <input 
+                type="text" 
+                value={playerCrew.coPilot}
+                onChange={(e) => onSetPlayerCrew({...playerCrew, coPilot: e.target.value})}
+                placeholder="F/O. DOE"
+                className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 transition-all"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1 col-span-1">
+              <label className="text-[8.5px] text-white/50 uppercase font-bold tracking-wider">
+                {language === 'id' ? 'Call Sign' : 'Call Sign'}
+              </label>
+              <input 
+                type="text" 
+                value={playerCrew.callSign}
+                onChange={(e) => onSetPlayerCrew({...playerCrew, callSign: e.target.value})}
+                placeholder="AF-101"
+                className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-amber-300 font-bold focus:outline-none focus:border-amber-400 transition-all"
+              />
+            </div>
+
+            <div className="space-y-1 col-span-1">
+              <label className="text-[8.5px] text-white/50 uppercase font-bold tracking-wider">
+                {language === 'id' ? 'Kru Kokpit' : 'Crew Count'}
+              </label>
+              <input 
+                type="number" 
+                value={playerCrew.crewCount}
+                onChange={(e) => onSetPlayerCrew({...playerCrew, crewCount: parseInt(e.target.value) || 0})}
+                className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 transition-all"
+              />
+            </div>
+
+            <div className="space-y-1 col-span-1">
+              <label className="text-[8.5px] text-white/50 uppercase font-bold tracking-wider">
+                {language === 'id' ? 'Kabin' : 'Cabin'}
+              </label>
+              <input 
+                type="number" 
+                value={playerCrew.cabinCount}
+                onChange={(e) => onSetPlayerCrew({...playerCrew, cabinCount: parseInt(e.target.value) || 0})}
+                className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 transition-all"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 4. PLAYER STRIKE MISSION SETUP (FROM HANGAR TO SCRAMBLE) */}

@@ -72,9 +72,10 @@ import { evaluateEscortProximity, calculateVvipNextStep } from './engine/escortE
 import { calculatePlayerStep } from './engine/flightEngine';
 import { calculateAircraftWeights } from './lib/weightCalculation';
 import { stepTrafficSimulation, checkPatrolInterceptTarget } from './engine/trafficEngine';
-import { CommsMessage, CommsState, createInitialCommsState, generatePeriodicFlightComms, processPlayerCustomTransmission } from './engine/aviationCommsEngine';
+import { CommsMessage, CommsState, createInitialCommsState, generatePeriodicFlightComms, generatePeriodicReconComms, processPlayerCustomTransmission } from './engine/aviationCommsEngine';
 import { ReconAircraft, RECON_AIRCRAFT_LIST, getDefaultAirportsForRecon } from './data/reconAircraft';
 import { createInitialReconState, stepReconFlight, generateReconIntelTargets, calculateReconTotalDistance } from './engine/reconEngine';
+import { speechManager } from './engine/speechManager';
 
 
 // Fix Leaflet marker icons
@@ -271,32 +272,13 @@ export default function App() {
     effectiveBurnRateRef.current = currentWeightCalculation.effectiveBurnRate;
   }, [currentWeightCalculation.effectiveBurnRate]);
 
-  const speak = useCallback((text: string, isATC = false) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = language === 'id' ? 'id-ID' : 'en-US';
-      
-      const voices = window.speechSynthesis.getVoices();
-      if (isATC) {
-        const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('zira'));
-        if (femaleVoice) utterance.voice = femaleVoice;
-        utterance.pitch = 1.05;
-        utterance.rate = 1.05;
-      } else {
-        const maleVoice = voices.find(v => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('mark'));
-        if (maleVoice) utterance.voice = maleVoice;
-        utterance.pitch = 0.9;
-        utterance.rate = 1.0;
-      }
-      
-      window.speechSynthesis.speak(utterance);
-    }
+  const speak = useCallback((text: string, isATC = false, priority: 'normal' | 'urgent' = 'normal') => {
+    speechManager.speak(text, isATC, language, priority);
   }, [language]);
 
   const atcRespond = useCallback((text: string) => {
-    setTimeout(() => speak(text, true), 1500);
-  }, [speak]);
+    speechManager.speak(text, true, language);
+  }, [language]);
 
   // Load saved routes and history on mount
   useEffect(() => {
@@ -457,6 +439,24 @@ export default function App() {
     setTankerOrbit(null);
     setShowRefuelOptions(false);
     setIsPickingTankerRV(false);
+
+    // 6b. Reset Reconnaissance / Intel Strike Mission States
+    setReconSurveyPoints([]);
+    reconSurveyPointsRef.current = [];
+    if (selectedReconRef.current) {
+      setReconState(createInitialReconState(selectedReconRef.current));
+      reconStateRef.current = createInitialReconState(selectedReconRef.current);
+    }
+    setIsReconSimulating(false);
+    isReconSimulatingRef.current = false;
+    setIsTargetLocked(false);
+    isTargetLockedRef.current = false;
+    setIsStrikeCompleted(false);
+    isStrikeCompletedRef.current = false;
+    setReconTargetLatInput('');
+    reconTargetLatInputRef.current = '';
+    setReconTargetLngInput('');
+    reconTargetLngInputRef.current = '';
 
     // 7. Reset Aircraft location & physics directly to Home Base on the ground
     setCurrentPos(basePos);
@@ -925,7 +925,9 @@ export default function App() {
       vvipTargetAircraft,
       vvipEndPoint: vvipEndPointRef.current,
       departureAirport,
-      activeWaypoint: waypointsRef.current.find(w => !w.reached) || null
+      activeWaypoint: waypointsRef.current.find(w => !w.reached) || null,
+      selectedRecon: selectedReconRef.current,
+      reconState: reconStateRef.current
     });
 
     // 1. Log and speak player transmission immediately
@@ -1183,8 +1185,19 @@ export default function App() {
   }, [reconDeparture, reconArrival, reconSurveyPoints, selectedRecon, reconSelectedWeaponId, departureAirport, reconStrikeLandingBase, language, speak]);
 
   const handleScrambleStrike = useCallback(() => {
-    const lat = parseFloat(reconTargetLatInput);
-    const lng = parseFloat(reconTargetLngInput);
+    const targets = reconStateRef.current?.detectedTargets || [];
+    let lat = parseFloat(reconTargetLatInputRef.current || reconTargetLatInput);
+    let lng = parseFloat(reconTargetLngInputRef.current || reconTargetLngInput);
+
+    if (targets.length > 0) {
+      const activeT = targets.find(t => !t.isEliminated) || targets[0];
+      lat = activeT.lat;
+      lng = activeT.lng;
+      setReconTargetLatInput(lat.toFixed(4));
+      reconTargetLatInputRef.current = lat.toFixed(4);
+      setReconTargetLngInput(lng.toFixed(4));
+      reconTargetLngInputRef.current = lng.toFixed(4);
+    }
 
     if (isNaN(lat) || isNaN(lng)) {
       setActiveScenario({
@@ -1203,17 +1216,6 @@ export default function App() {
     const homeBase = departureAirport || reconDeparture || MILITARY_AIRPORTS[0];
     const landingBase = reconStrikeLandingBase || reconArrival || MILITARY_AIRPORTS[0];
 
-    const strikeTargetWp: Waypoint = {
-      id: 'strike-target-' + Date.now(),
-      name: language === 'id' ? `🎯 SASARAN TEMPUR (${lat.toFixed(3)}°, ${lng.toFixed(3)}°)` : `🎯 STRIKE TARGET (${lat.toFixed(3)}°, ${lng.toFixed(3)}°)`,
-      lat: lat,
-      lng: lng,
-      reached: false,
-      type: 'waypoint',
-      planAltitude: 22000,
-      planSpeed: selectedAircraft.cruiseSpeed || 480
-    };
-
     const strikeDepWp: Waypoint = {
       id: 'strike-dep-' + homeBase.icao,
       name: `DEP: ${homeBase.icao} - ${homeBase.name}`,
@@ -1224,6 +1226,28 @@ export default function App() {
       planAltitude: 0,
       planSpeed: 0
     };
+
+    const strikeTargetWps: Waypoint[] = targets.length > 0
+      ? targets.map((t, idx) => ({
+          id: 'strike-target-' + t.id,
+          name: `🎯 [${t.assignedMission || 'STRIKE'}] ${t.name}`,
+          lat: t.lat,
+          lng: t.lng,
+          reached: !!t.isEliminated,
+          type: 'waypoint',
+          planAltitude: 22000,
+          planSpeed: selectedAircraft.cruiseSpeed || 480
+        }))
+      : [{
+          id: 'strike-target-' + Date.now(),
+          name: language === 'id' ? `🎯 SASARAN TEMPUR (${lat.toFixed(3)}°, ${lng.toFixed(3)}°)` : `🎯 STRIKE TARGET (${lat.toFixed(3)}°, ${lng.toFixed(3)}°)`,
+          lat: lat,
+          lng: lng,
+          reached: false,
+          type: 'waypoint',
+          planAltitude: 22000,
+          planSpeed: selectedAircraft.cruiseSpeed || 480
+        }];
 
     const strikeArrWp: Waypoint = {
       id: 'strike-arr-' + landingBase.icao,
@@ -1236,7 +1260,7 @@ export default function App() {
       planSpeed: 300
     };
 
-    const newWaypoints = [strikeDepWp, strikeTargetWp, strikeArrWp];
+    const newWaypoints = [strikeDepWp, ...strikeTargetWps, strikeArrWp];
     setWaypoints(newWaypoints);
     waypointsRef.current = newWaypoints;
 
@@ -1255,59 +1279,132 @@ export default function App() {
     setIsTracking(true);
     setIsSimulating(true);
     setIsTargetLocked(false);
+    isTargetLockedRef.current = false;
     setIsStrikeCompleted(false);
+    isStrikeCompletedRef.current = false;
 
-    setReconState(prev => ({
+    setReconState(prev => prev ? ({
       ...prev,
       phase: 'strike_enroute',
-      scrambleApproved: true
-    }));
+      scrambleApproved: true,
+      activeTargetIndex: 0
+    }) : null);
 
     const call = crew.callSign || 'EAGLE-01';
+    const targetCount = targets.length > 0 ? targets.length : 1;
     speak(
       language === 'id'
-        ? `Garuda Control, ${call} SCRAMBLE! Tempur bersenjata lengkap meluncur menuju koordinat sasaran intai di ${lat.toFixed(2)}, ${lng.toFixed(2)}. Senjata siap tempur!`
-        : `Garuda Control, ${call} SCRAMBLE! Armed strike jet inbound to recon target coordinates at ${lat.toFixed(2)}, ${lng.toFixed(2)}. Weapons hot!`
+        ? `Garuda Control, ${call} SCRAMBLE! Tempur bersenjata lengkap meluncur menyelesaikan ${targetCount} sasaran intai. Target awal: ${lat.toFixed(2)}, ${lng.toFixed(2)}. Senjata siap!`
+        : `Garuda Control, ${call} SCRAMBLE! Armed strike jet inbound to engage ${targetCount} recon target points. Initial vector: ${lat.toFixed(2)}, ${lng.toFixed(2)}. Weapons hot!`
     );
 
     atcRespond(
       language === 'id'
-        ? `${call}, Garuda Command. Jalur udara tempur dibuka. Otorisasi penyerangan penuh (Weapons Free) saat target terkunci.`
-        : `${call}, Garuda Command. Tactical strike corridor cleared. Weapons free authorized once locked on target.`
+        ? `${call}, Garuda Command. Koridor serangan tempur dibuka. Selesaikan seluruh target intai secara berurutan. Otorisasi Weapons Free saat terkunci.`
+        : `${call}, Garuda Command. Strike corridor open. Clear all recon targets sequentially. Weapons free authorized once locked on target.`
     );
   }, [reconTargetLatInput, reconTargetLngInput, departureAirport, reconDeparture, reconStrikeLandingBase, reconArrival, selectedAircraft, crew.callSign, language, speak, atcRespond]);
 
   const handleEngageTarget = useCallback(() => {
-    setIsStrikeCompleted(true);
-    isStrikeCompletedRef.current = true;
+    const curTargets = reconStateRef.current?.detectedTargets || [];
+    const currentUneliminatedIdx = curTargets.findIndex(t => !t.isEliminated);
+    
+    const targetToEliminate = currentUneliminatedIdx !== -1 ? curTargets[currentUneliminatedIdx] : null;
+    const targetName = targetToEliminate?.name || (language === 'id' ? 'Sasaran Intai' : 'Intel Target');
+    const targetMission = targetToEliminate?.assignedMission || 'Strike';
+
     setPoints(prev => prev + 1500);
 
     // Update target status in recon state
-    setReconState(prev => ({
-      ...prev,
-      phase: 'strike_success',
-      detectedTargets: prev.detectedTargets.map(t => ({
-        ...t,
-        isEliminated: true
-      }))
-    }));
+    const updatedTargets = curTargets.length > 0
+      ? curTargets.map((t, idx) => idx === currentUneliminatedIdx ? { ...t, isEliminated: true } : t)
+      : [];
 
-    // Advance player waypoint to landing base
-    setWaypoints(prev => prev.map((wp, idx) => idx <= 1 ? { ...wp, reached: true } : wp));
+    const remainingTargets = updatedTargets.filter(t => !t.isEliminated);
+    const nextTarget = remainingTargets[0] || null;
+
+    // Mark current target waypoint as reached
+    setWaypoints(prev => {
+      const activeWpIdx = prev.findIndex(w => !w.reached && w.type === 'waypoint');
+      if (activeWpIdx !== -1) {
+        const updated = [...prev];
+        updated[activeWpIdx] = { ...updated[activeWpIdx], reached: true };
+        return updated;
+      }
+      return prev;
+    });
 
     const call = crew.callSign || 'EAGLE-01';
-    speak(
-      language === 'id'
-        ? `FOX THREE! SASARAN TERHANCURKAN! Direct hit pada target intai. Ancaman dinetralisir. ${call} kembali ke pangkalan pendaratan.`
-        : `FOX THREE! TARGET DESTROYED! Direct hit on recon target. Threat neutralized. ${call} proceeding to landing base.`
-    );
 
-    atcRespond(
-      language === 'id'
-        ? `Bagus sekali ${call}! Misi serangan intai sukses sempurna. Diizinkan mendarat di pangkalan tujuan.`
-        : `Good job ${call}! Strike mission successful. Cleared to land at destination airbase.`
-    );
-  }, [crew.callSign, language, speak, atcRespond]);
+    if (nextTarget) {
+      // More targets remaining! Vector to next target
+      const nextIdx = updatedTargets.findIndex(t => !t.isEliminated);
+      setReconState(prev => prev ? ({
+        ...prev,
+        phase: 'strike_enroute',
+        activeTargetIndex: nextIdx,
+        detectedTargets: updatedTargets
+      }) : null);
+
+      setReconTargetLatInput(nextTarget.lat.toFixed(4));
+      reconTargetLatInputRef.current = nextTarget.lat.toFixed(4);
+      setReconTargetLngInput(nextTarget.lng.toFixed(4));
+      reconTargetLngInputRef.current = nextTarget.lng.toFixed(4);
+
+      setIsTargetLocked(false);
+      isTargetLockedRef.current = false;
+
+      // Direct autopilot heading to next target
+      if (currentPosRef.current) {
+        const nextHdg = Math.round(getBearing(currentPosRef.current.lat, currentPosRef.current.lng, nextTarget.lat, nextTarget.lng));
+        setTargetHeading(nextHdg);
+        targetHeadingRef.current = nextHdg;
+      }
+
+      speak(
+        language === 'id'
+          ? `FOX THREE! Sasaran ${targetName} TERHANCURKAN! Beralih ke titik sasaran berikutnya: ${nextTarget.name} (${nextTarget.assignedMission || 'Strike'}). Haluan diarahkan!`
+          : `FOX THREE! Target ${targetName} DESTROYED! Vectoring to next target: ${nextTarget.name} (${nextTarget.assignedMission || 'Strike'}). Heading updated!`
+      );
+
+      atcRespond(
+        language === 'id'
+          ? `${call}, sasaran terkonfirmasi dinetralisir. Lanjutkan misi ke sasaran intel berikutnya: ${nextTarget.name}. Radar memandu haluan.`
+          : `${call}, direct hit confirmed. Proceed to engage next intel target: ${nextTarget.name}. Radar vectoring you in.`
+      );
+    } else {
+      // All targets eliminated!
+      setIsStrikeCompleted(true);
+      isStrikeCompletedRef.current = true;
+      setIsTargetLocked(false);
+      isTargetLockedRef.current = false;
+
+      setReconState(prev => prev ? ({
+        ...prev,
+        phase: 'strike_success',
+        detectedTargets: updatedTargets
+      }) : null);
+
+      const landingBase = reconStrikeLandingBase || reconArrival || MILITARY_AIRPORTS[0];
+      if (currentPosRef.current) {
+        const rtbHdg = Math.round(getBearing(currentPosRef.current.lat, currentPosRef.current.lng, landingBase.lat, landingBase.lng));
+        setTargetHeading(rtbHdg);
+        targetHeadingRef.current = rtbHdg;
+      }
+
+      speak(
+        language === 'id'
+          ? `FOX THREE! SEMUA SASARAN TELAH BERHASIL DIHANCURKAN! Seluruh target intai dinetralisir. ${call} kembali ke pangkalan pendaratan ${landingBase.name}.`
+          : `FOX THREE! ALL RECON TARGETS DESTROYED! All intel threats neutralized. ${call} proceeding to recovery base ${landingBase.name}.`
+      );
+
+      atcRespond(
+        language === 'id'
+          ? `Kerja luar biasa ${call}! Seluruh target pengintaian telah dihancurkan dengan sempurna. Diizinkan mendarat di ${landingBase.icao}.`
+          : `Outstanding job ${call}! All reconnaissance targets eliminated successfully. Cleared for recovery landing at ${landingBase.icao}.`
+      );
+    }
+  }, [reconStateRef, language, crew.callSign, reconStrikeLandingBase, reconArrival, speak, atcRespond]);
 
   // Dedicated Recon Simulation Loop (High-Frequency 100ms)
   useEffect(() => {
@@ -1366,6 +1463,31 @@ export default function App() {
           detectedTargets: updatedTargets
         };
       });
+
+      // Generate High-Intensity 3-Way Tactical Radio Comms between Recon, Tower, and Player Strike Jet
+      const reconCommsResult = generatePeriodicReconComms(
+        Date.now() / 1000,
+        commsStateRef.current,
+        {
+          callsign: crew.callSign || (language === 'id' ? 'ELANG-01' : 'EAGLE-01'),
+          language,
+          reconState: reconStateRef.current,
+          selectedRecon: currentSelectedRecon,
+          reconDeparture: reconDepartureRef.current,
+          reconArrival: reconArrivalRef.current,
+          isTargetLocked: isTargetLockedRef.current,
+          isStrikeCompleted: isStrikeCompletedRef.current
+        }
+      );
+
+      if (reconCommsResult.messages.length > 0) {
+        commsStateRef.current = reconCommsResult.updatedState;
+        setCommsMessages(prev => [...prev, ...reconCommsResult.messages]);
+        reconCommsResult.messages.forEach((msg) => {
+          const text = language === 'id' ? msg.textId : msg.textEn;
+          speak(text, msg.sender === 'TOWER' || msg.sender === 'ATC' || msg.sender === 'AWACS');
+        });
+      }
 
       // Check player proximity to target for Target Lock
       const curPos = currentPosRef.current;
@@ -1768,11 +1890,9 @@ export default function App() {
           commsStateRef.current = periodicComms.updatedState;
           setCommsMessages(prev => [...prev, ...periodicComms.messages]);
           
-          periodicComms.messages.forEach((msg, idx) => {
-            setTimeout(() => {
-              const text = language === 'id' ? msg.textId : msg.textEn;
-              speak(text, msg.sender === 'ATC' || msg.sender === 'AWACS');
-            }, idx * 2500);
+          periodicComms.messages.forEach((msg) => {
+            const text = language === 'id' ? msg.textId : msg.textEn;
+            speak(text, msg.sender === 'ATC' || msg.sender === 'AWACS');
           });
         }
       }
@@ -2484,6 +2604,7 @@ export default function App() {
                   <MissionOverlays 
                     language={language}
                     isSimulating={isSimulating}
+                    isReconSimulating={isReconSimulating}
                     activeScenario={activeScenario}
                     setActiveScenario={setActiveScenario}
                     selectedAircraft={selectedAircraft}
@@ -2679,15 +2800,11 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setMissionComplete(false);
-                      setWaypoints([]);
-                      setCurrentPos(null);
-                      setFuelRemaining(selectedAircraft.maxFuel);
-                      setPoints(0);
-                      setFlightHours(0);
+                      deleteCurrentRoute();
                     }}
                     className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl transition-all shadow-xl shadow-blue-600/20 active:scale-95 uppercase tracking-widest text-xs"
                   >
-                    {language === 'id' ? 'Kembali ke Pangkalan' : 'Return to Base'}
+                    {language === 'id' ? 'Kembali ke Pangkalan & Reset Rute' : 'Return to Base & Reset Route'}
                   </button>
                 </div>
               </motion.div>
@@ -2971,11 +3088,7 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setShowMissionSummary(false);
-                      stopTracking();
-                      setWaypoints([]);
-                      setDepartureAirport(null);
-                      setArrivalAirport(null);
-                      setPoints(0);
+                      deleteCurrentRoute();
                     }}
                     className="w-full py-5 bg-white text-black font-black rounded-2xl transition-all hover:bg-green-400 hover:scale-[1.02] active:scale-95 uppercase tracking-[0.2em] text-sm shadow-xl"
                   >

@@ -10,6 +10,7 @@ import { CommsMessage } from '../../engine/aviationCommsEngine';
 interface MissionOverlaysProps {
   language: 'id' | 'en';
   isSimulating: boolean;
+  isReconSimulating?: boolean;
   activeScenario: Scenario | null;
   setActiveScenario: (s: Scenario | null) => void;
   selectedAircraft: Aircraft;
@@ -55,6 +56,7 @@ interface MissionOverlaysProps {
 export const MissionOverlays: React.FC<MissionOverlaysProps> = ({
   language,
   isSimulating,
+  isReconSimulating = false,
   activeScenario,
   setActiveScenario,
   selectedAircraft,
@@ -96,7 +98,7 @@ export const MissionOverlays: React.FC<MissionOverlaysProps> = ({
   onRTB,
   isRTB
 }) => {
-  if (!isSimulating && !activeScenario) return null;
+  if (!isSimulating && !isReconSimulating && !activeScenario && commsMessages.length === 0) return null;
 
   const toggleToolbar = () => {
     if (setIsToolbarVisible) {
@@ -171,7 +173,7 @@ export const MissionOverlays: React.FC<MissionOverlaysProps> = ({
       </AnimatePresence>
 
       {/* Real-time Intensive Tactical Radio Comms Feed (Top Left) */}
-      {isSimulating && (
+      {(isSimulating || isReconSimulating || commsMessages.length > 0) && (
         <RadioCommsFeed 
           language={language}
           messages={commsMessages}

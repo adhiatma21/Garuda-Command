@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { Aircraft, Crew, PlayerProfile, OwnedAircraft, SquadronCrewRoster, FacilityState, AircraftGenerationUpgrade } from '../../../types';
-import { SQUADRON_DATA, AIRCRAFT_PRESETS, PLAYABLE_SQUADRONS, PlayableSquadron } from '../../../constants';
+import { SQUADRON_DATA, AIRCRAFT_PRESETS, PLAYABLE_SQUADRONS, PlayableSquadron, MILITARY_RANKS } from '../../../constants';
 import { MilitaryAirport, MILITARY_AIRPORTS } from '../../../airports';
 import { 
   INITIAL_SQUADRON_BUDGET, 
@@ -318,18 +318,44 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
   // View Mode: 'list' (Daftar 8 Skuadron Pemain) | 'detail' (Detail Manajemen Skuadron)
   const [viewMode, setViewMode] = useState<'detail' | 'list'>('detail');
 
+  // 0. Primary Assignment Squadron from Profile Initialization
+  const initialAssignmentSquadronId = useMemo(() => {
+    if (playerProfile?.squadron) {
+      const matchById = PLAYABLE_SQUADRONS.find(s => s.id.toLowerCase() === playerProfile.squadron.toLowerCase());
+      if (matchById) return matchById.id;
+      const matchByName = PLAYABLE_SQUADRONS.find(
+        s => s.name.toLowerCase().includes(playerProfile.squadron.toLowerCase()) || 
+             playerProfile.squadron.toLowerCase().includes(s.name.toLowerCase())
+      );
+      if (matchByName) return matchByName.id;
+    }
+    return 'sq1';
+  }, [playerProfile]);
+
+  // Unlocked Squadron IDs List (Default has the user's initial selected squadron)
+  const [unlockedSquadronIds, setUnlockedSquadronIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ais_unlocked_squadron_ids');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (!parsed.includes(initialAssignmentSquadronId)) {
+            return [initialAssignmentSquadronId, ...parsed];
+          }
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return [initialAssignmentSquadronId];
+  });
+
   // Selected Squadron ID
   const [selectedSquadronId, setSelectedSquadronId] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('ais_active_squadron_id');
       if (saved && PLAYABLE_SQUADRONS.some(s => s.id === saved)) return saved;
     } catch (e) {}
-    if (playerProfile?.squadron) {
-      const found = PLAYABLE_SQUADRONS.find(s => s.name.toLowerCase().includes(playerProfile.squadron.toLowerCase()));
-      if (found) return found.id;
-    }
-    const matchedSq = PLAYABLE_SQUADRONS.find(s => s.aircraftId === selectedAircraft.id);
-    return matchedSq?.id || 'sq3';
+    return initialAssignmentSquadronId;
   });
 
   const currentPlayableSquadron = useMemo(() => {
@@ -529,6 +555,12 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     setActiveHealthTail(fleet[0]?.tailNumber || 'TS-1601');
     setViewMode('detail');
 
+    // Synchronize global aircraft model with squadron's designated aircraft
+    const targetPreset = AIRCRAFT_PRESETS.find(p => p.id === sq.aircraftId);
+    if (targetPreset) {
+      setSelectedAircraft(targetPreset);
+    }
+
     if (speak) {
       speak(
         language === 'id'
@@ -536,6 +568,73 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
           : `Switched command to ${sq.fullName} at ${sq.baseName}. Aircraft: ${sq.aircraftName}.`
       );
     }
+  };
+
+  // Handle purchasing / unlocking a squadron
+  const handleUnlockSquadron = (sq: PlayableSquadron) => {
+    if (unlockedSquadronIds.includes(sq.id)) {
+      handleSelectSquadron(sq);
+      return;
+    }
+
+    const playerRank = playerProfile?.rank || 'Letda';
+    const playerRankIndex = Math.max(0, MILITARY_RANKS.indexOf(playerRank));
+
+    if (playerRankIndex < sq.minRankIndex) {
+      const errMsg = language === 'id'
+        ? `Gagal Buka Skuadron: Pangkat tidak memenuhi syarat minimal (${sq.minRank}). Pangkat Anda: ${playerRank}.`
+        : `Unlock Failed: Insufficient rank (Requires: ${sq.minRank}). Your Rank: ${playerRank}.`;
+      setTransactionFeedback(errMsg);
+      if (speak) speak(errMsg);
+      return;
+    }
+
+    if (budget < sq.unlockPrice) {
+      const errMsg = language === 'id'
+        ? `Gagal Buka Skuadron: Anggaran tidak mencukupi (${formatCurrency(sq.unlockPrice)}). Saldo Anda: ${formatCurrency(budget)}.`
+        : `Unlock Failed: Insufficient budget (${formatCurrency(sq.unlockPrice)}). Available: ${formatCurrency(budget)}.`;
+      setTransactionFeedback(errMsg);
+      if (speak) speak(errMsg);
+      return;
+    }
+
+    // Deduct cost from treasury
+    setBudget(prev => prev - sq.unlockPrice);
+    
+    // Add to unlocked list
+    const newUnlocks = Array.from(new Set([...unlockedSquadronIds, sq.id]));
+    setUnlockedSquadronIds(newUnlocks);
+    try {
+      localStorage.setItem('ais_unlocked_squadron_ids', JSON.stringify(newUnlocks));
+    } catch (e) {}
+
+    // Initialize the new squadron's fleet & budget in localStorage if not already initialized
+    const sqKey = `ais_sq_state_${sq.id}`;
+    const preset = AIRCRAFT_PRESETS.find(p => p.id === sq.aircraftId) || selectedAircraft;
+    try {
+      if (!localStorage.getItem(`${sqKey}_owned_fleet`)) {
+        localStorage.setItem(`${sqKey}_owned_fleet`, JSON.stringify([createDefaultOwnedAircraft(preset, sq.name)]));
+      }
+      if (!localStorage.getItem(`${sqKey}_budget`)) {
+        localStorage.setItem(`${sqKey}_budget`, String(INITIAL_SQUADRON_BUDGET));
+      }
+    } catch (e) {}
+
+    const successMsg = language === 'id'
+      ? `OTORISASI RESMI BERHASIL! Lisensi ${sq.fullName} di ${sq.baseName} resmi dibuka untuk penugasan tempur!`
+      : `COMMISSIONING SUCCESSFUL! ${sq.fullName} at ${sq.baseName} officially unlocked for combat operations!`;
+    setTransactionFeedback(successMsg);
+
+    if (speak) {
+      speak(
+        language === 'id'
+          ? `Mabes TNI Angkatan Udara telah mengesahkan pengaktifan ${sq.fullName}.`
+          : `TNI AU Headquarters authorized the commissioning of ${sq.fullName}.`
+      );
+    }
+
+    // Switch to newly unlocked squadron
+    handleSelectSquadron(sq);
   };
 
   // Activate squadron for flight simulator
@@ -1008,10 +1107,13 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
             language={language}
             playableSquadrons={PLAYABLE_SQUADRONS}
             activeSquadronId={selectedSquadronId}
+            unlockedSquadronIds={unlockedSquadronIds}
             onSelectSquadron={handleSelectSquadron}
             onActivateForFlight={handleActivateSquadronForFlight}
+            onUnlockSquadron={handleUnlockSquadron}
             formatCurrency={formatCurrency}
             playerProfile={playerProfile}
+            currentBudget={budget}
           />
         </div>
       ) : (
@@ -1043,20 +1145,33 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
             <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-0.5">
               {PLAYABLE_SQUADRONS.map((sq) => {
                 const isSelected = sq.id === selectedSquadronId;
+                const isUnlocked = unlockedSquadronIds.includes(sq.id);
                 return (
                   <button
                     key={sq.id}
                     type="button"
-                    onClick={() => handleSelectSquadron(sq)}
+                    onClick={() => {
+                      if (isUnlocked) {
+                        handleSelectSquadron(sq);
+                      } else {
+                        setViewMode('list');
+                      }
+                    }}
                     className={cn(
                       "px-2 py-1 rounded-lg text-[7.5px] font-mono font-bold shrink-0 flex items-center gap-1 transition-all border",
                       isSelected
                         ? "bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-600/30 scale-105"
-                        : "bg-white/5 text-white/60 border-white/10 hover:border-white/25 hover:text-white"
+                        : !isUnlocked
+                          ? "bg-amber-950/20 text-amber-300/60 border-amber-500/20 hover:border-amber-500/40 hover:text-amber-300"
+                          : "bg-white/5 text-white/60 border-white/10 hover:border-white/25 hover:text-white"
                     )}
+                    title={!isUnlocked ? `Terkunci - Klik untuk Buka Lisensi (${sq.minRank})` : sq.fullName}
                   >
                     <Shield className="w-2.5 h-2.5" />
                     <span className="truncate max-w-[85px]">{sq.name.replace('Skadron Udara ', 'Skadron ')}</span>
+                    {!isUnlocked && (
+                      <span className="text-[6.5px] text-amber-400 font-black">🔒</span>
+                    )}
                   </button>
                 );
               })}

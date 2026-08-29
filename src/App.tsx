@@ -36,7 +36,10 @@ import {
   Plus,
   Minus,
   Compass,
-  FastForward
+  FastForward,
+  Landmark,
+  LogOut,
+  Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -60,6 +63,8 @@ import { MILITARY_AIRPORTS, MilitaryAirport } from './airports';
 import { AIRCRAFT_PRESETS } from './constants';
 import { FlightTab } from './components/game/Sidebar/FlightTab';
 import { SquadronTab } from './components/game/Sidebar/SquadronTab';
+import { FinanceDashboard } from './components/game/finance/FinanceDashboard';
+import { LogoutConfirmModal } from './components/game/LogoutConfirmModal';
 import { HangarBayView } from './components/game/hangar/HangarBayView';
 import { MissionOverlays } from './components/game/MissionOverlays';
 import { TacticalRadarMap } from './components/game/TacticalRadarMap';
@@ -115,7 +120,8 @@ export default function App() {
   const currentAltitudeTarget = autoPilot ? (activeWp?.planAltitude || 25000) : targetAltitude;
   const currentSpeedTarget = autoPilot ? (activeWp?.planSpeed || 450) : targetSpeed;
   
-  const [activeTab, setActiveTab] = useState<'flight' | 'squadron'>('flight');
+  const [activeTab, setActiveTab] = useState<'flight' | 'squadron' | 'finance'>('flight');
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [language, setLanguage] = useState<'id' | 'en'>('en');
   const [showWelcome, setShowWelcome] = useState(false);
   const [appPhase, setAppPhase] = useState<'boot' | 'profile' | 'loading' | 'main'>('boot');
@@ -369,6 +375,7 @@ export default function App() {
   };
 
   const deleteCurrentRoute = useCallback(() => {
+    speechManager.clearQueue();
     // 1. Identify Home Base (from player profile, or current departure airport, or default airbase)
     const homeBase = (playerProfile?.homeBase ? {
       id: playerProfile.homeBase.id,
@@ -807,11 +814,26 @@ export default function App() {
   };
 
   const stopTracking = useCallback(() => {
+    speechManager.clearQueue();
     setIsTracking(false);
     setIsSimulating(false);
     setIsRTB(false);
     setActiveScenario(null);
   }, []);
+
+  const handleConfirmLogout = (mode: 'restart' | 'switch_profile') => {
+    speechManager.clearQueue();
+    setIsTracking(false);
+    setIsSimulating(false);
+    setIsRTB(false);
+    setShowLogoutModal(false);
+    setActiveTab('flight');
+    if (mode === 'restart') {
+      setAppPhase('boot');
+    } else {
+      setAppPhase('profile');
+    }
+  };
 
   const handleRTB = () => {
     const curPos = currentPosRef.current || (waypoints.length > 0 ? { lat: waypoints[0].lat, lng: waypoints[0].lng } : null);
@@ -1762,6 +1784,7 @@ export default function App() {
 
                 return [];
               } else {
+                speechManager.clearQueue();
                 setIsSimulating(false);
                 setIsTracking(false);
                 setMissionComplete(true);
@@ -2183,9 +2206,10 @@ export default function App() {
           
           <NavIcon active={activeTab === 'flight'} onClick={() => setActiveTab('flight')} icon={<LayoutDashboard className="w-5 h-5" />} label={language === 'id' ? 'Penerbangan' : 'Flight'} />
           <NavIcon active={activeTab === 'squadron'} onClick={() => setActiveTab('squadron')} icon={<Shield className="w-5 h-5" />} label={language === 'id' ? 'Skuadron' : 'Squadron'} />
+          <NavIcon active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} icon={<Landmark className="w-5 h-5 text-amber-400" />} label={language === 'id' ? 'Keuangan LANUD' : 'LANUD Finance'} />
           
           <div className="mt-auto flex flex-col gap-4">
-            <NavIcon active={false} onClick={() => {}} icon={<Settings2 className="w-5 h-5" />} label="Pengaturan" />
+            <NavIcon active={false} onClick={() => setShowLogoutModal(true)} icon={<LogOut className="w-5 h-5 text-red-400 hover:text-red-300" />} label={language === 'id' ? 'Keluar / Logout' : 'Logout'} />
           </div>
         </div>
 
@@ -2216,6 +2240,16 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-3">
+              {/* Quick Finance indicator */}
+              <button 
+                onClick={() => setActiveTab('finance')}
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-[10px] font-mono font-bold transition-all shadow-sm active:scale-95"
+                title={language === 'id' ? 'Buka Manajemen Keuangan LANUD' : 'Open LANUD Financial Management'}
+              >
+                <Coins className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <span>{language === 'id' ? 'KEUANGAN LANUD' : 'LANUD BUDGET'}</span>
+              </button>
+
               {/* Language Selector */}
               <div className="flex items-center bg-black/40 rounded-lg border border-white/5 p-1">
                 <button 
@@ -2233,37 +2267,64 @@ export default function App() {
               </div>
 
               {/* HUD / Toolbar Toggle Button */}
+              {activeTab !== 'finance' && (
+                <button 
+                  onClick={() => setIsToolbarVisible(prev => !prev)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1.5 transition-all shadow-md",
+                    isToolbarVisible 
+                      ? "bg-blue-600/20 border-blue-500/40 text-blue-400 hover:bg-blue-600/30" 
+                      : "bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30"
+                  )}
+                  title={isToolbarVisible ? (language === 'id' ? 'Sembunyikan HUD / Toolbar' : 'Hide HUD / Toolbar') : (language === 'id' ? 'Tampilkan HUD / Toolbar' : 'Show HUD / Toolbar')}
+                >
+                  {isToolbarVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  <span>HUD {isToolbarVisible ? 'ON' : 'OFF'}</span>
+                </button>
+              )}
+
+              {/* Quick Logout Button */}
               <button 
-                onClick={() => setIsToolbarVisible(prev => !prev)}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1.5 transition-all shadow-md",
-                  isToolbarVisible 
-                    ? "bg-blue-600/20 border-blue-500/40 text-blue-400 hover:bg-blue-600/30" 
-                    : "bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30"
-                )}
-                title={isToolbarVisible ? (language === 'id' ? 'Sembunyikan HUD / Toolbar' : 'Hide HUD / Toolbar') : (language === 'id' ? 'Tampilkan HUD / Toolbar' : 'Show HUD / Toolbar')}
+                onClick={() => setShowLogoutModal(true)}
+                className="px-2.5 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-mono font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                title={language === 'id' ? 'Keluar / Ganti Profil' : 'Logout / Switch Profile'}
               >
-                {isToolbarVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                <span>HUD {isToolbarVisible ? 'ON' : 'OFF'}</span>
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{language === 'id' ? 'LOGOUT' : 'LOGOUT'}</span>
               </button>
 
               {/* GPS Status */}
-              <div className="bg-black/40 px-3 py-1 rounded-lg border border-white/5 flex items-center gap-2">
+              <div className="hidden lg:flex bg-black/40 px-3 py-1 rounded-lg border border-white/5 items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-[10px] font-mono text-white/60 uppercase">Terkunci GPS</span>
               </div>
 
               {/* Sidebar Minimize Toggle */}
-              <button 
-                onClick={() => setIsMenuMinimized(!isMenuMinimized)} 
-                className="p-2 hover:bg-white/5 rounded-lg transition-colors border border-white/5"
-                title={isMenuMinimized ? (language === 'id' ? 'Tampilkan Panel Kiri' : 'Show Left Panel') : (language === 'id' ? 'Sembunyikan Panel Kiri' : 'Hide Left Panel')}
-              >
-                {isMenuMinimized ? <Menu className="w-5 h-5 text-white/70" /> : <X className="w-5 h-5 text-white/70" />}
-              </button>
+              {activeTab !== 'finance' && (
+                <button 
+                  onClick={() => setIsMenuMinimized(!isMenuMinimized)} 
+                  className="p-2 hover:bg-white/5 rounded-lg transition-colors border border-white/5"
+                  title={isMenuMinimized ? (language === 'id' ? 'Tampilkan Panel Kiri' : 'Show Left Panel') : (language === 'id' ? 'Sembunyikan Panel Kiri' : 'Hide Left Panel')}
+                >
+                  {isMenuMinimized ? <Menu className="w-5 h-5 text-white/70" /> : <X className="w-5 h-5 text-white/70" />}
+                </button>
+              )}
             </div>
           </header>
 
+          {activeTab === 'finance' ? (
+            <div className="flex-1 flex overflow-hidden bg-[#05070a]">
+              <FinanceDashboard 
+                language={language}
+                playerProfile={playerProfile}
+                points={points}
+                setPoints={setPoints}
+                flightHours={flightHours}
+                speak={speak}
+                onNavigateToFlight={() => setActiveTab('flight')}
+              />
+            </div>
+          ) : (
           <div className="flex-1 flex overflow-hidden">
             {/* Left Panel - Details */}
             <motion.div 
@@ -2733,6 +2794,7 @@ export default function App() {
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* Mission Complete Overlay */}
@@ -3099,6 +3161,18 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Logout Confirmation Modal */}
+        <LogoutConfirmModal 
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onConfirmLogout={handleConfirmLogout}
+          language={language}
+          pilotName={crew.pilot || playerProfile?.fullName || 'Komandan'}
+          callsign={crew.callSign || (language === 'id' ? 'ELANG-01' : 'EAGLE-01')}
+          squadron={playerProfile?.squadron || 'Skadron Udara'}
+          rank={playerProfile?.militaryRank || 'Letkol Pnb'}
+        />
       </div>
     </React.Fragment>
   );

@@ -18,7 +18,8 @@ import {
   MILITARY_SPECIALIZATIONS, 
   INDONESIAN_AIRBASES, 
   SQUADRON_DATA,
-  AIRCRAFT_PRESETS
+  AIRCRAFT_PRESETS,
+  PLAYABLE_SQUADRONS
 } from '../../constants';
 import { PlayerProfile } from '../../types';
 import { cn } from '../../lib/utils';
@@ -221,6 +222,30 @@ export const PlayerProfileInitialization: React.FC<Props> = ({ onComplete, langu
       try {
         localStorage.setItem('ais_registered_commanders', JSON.stringify(updatedProfiles));
         localStorage.setItem('ais_active_profile', JSON.stringify(fullProfile));
+        
+        // Find matching playable squadron id
+        const sqMatch = PLAYABLE_SQUADRONS.find(
+          s => s.id === fullProfile.squadron || 
+               s.name.toLowerCase() === (fullProfile.squadron || '').toLowerCase() ||
+               (fullProfile.squadron || '').toLowerCase().includes(s.name.toLowerCase())
+        );
+        const assignedSqId = sqMatch ? sqMatch.id : 'sq1';
+        localStorage.setItem('ais_active_squadron_id', assignedSqId);
+
+        // Ensure this initial squadron is registered as the first unlocked squadron
+        const existingUnlocksStr = localStorage.getItem('ais_unlocked_squadron_ids');
+        let currentUnlocks: string[] = [assignedSqId];
+        if (existingUnlocksStr) {
+          try {
+            const parsed = JSON.parse(existingUnlocksStr);
+            if (Array.isArray(parsed) && !parsed.includes(assignedSqId)) {
+              currentUnlocks = [assignedSqId, ...parsed];
+            } else if (Array.isArray(parsed)) {
+              currentUnlocks = parsed;
+            }
+          } catch (e) {}
+        }
+        localStorage.setItem('ais_unlocked_squadron_ids', JSON.stringify(currentUnlocks));
       } catch (e) {
         console.error('Failed to save commander profile', e);
       }

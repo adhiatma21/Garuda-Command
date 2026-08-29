@@ -16,6 +16,8 @@ import { Aircraft } from '../../../types';
 import { cn } from '../../../lib/utils';
 
 // Photorealistic Front Renders
+import hawkFrontImg from '../../../assets/images/hawk_front_render_1788011355813.jpg';
+import t50FrontImg from '../../../assets/images/t50_front_render_1788011417508.jpg';
 import f16FrontImg from '../../../assets/images/f16_front_render_1787660882007.jpg';
 import su30FrontImg from '../../../assets/images/su30_front_render_1787660913685.jpg';
 import rafaleFrontImg from '../../../assets/images/rafale_front_render_1787660928232.jpg';
@@ -23,6 +25,8 @@ import tucanoFrontImg from '../../../assets/images/tucano_front_render_178766095
 import c130FrontImg from '../../../assets/images/c130_front_render_1787660971492.jpg';
 
 // Photorealistic Side Renders (Port Side)
+import hawkSideImg from '../../../assets/images/hawk_side_render_1788011377032.jpg';
+import t50SideImg from '../../../assets/images/t50_side_render_1788011436142.jpg';
 import f16SideImg from '../../../assets/images/f16_side_render_1787665744962.jpg';
 import su30SideImg from '../../../assets/images/su30_side_render_1787665782674.jpg';
 import rafaleSideImg from '../../../assets/images/rafale_side_render_1787665816351.jpg';
@@ -30,6 +34,8 @@ import tucanoSideImg from '../../../assets/images/tucano_side_render_17876658896
 import c130SideImg from '../../../assets/images/c130_side_render_1787665919296.jpg';
 
 // Photorealistic Rear Renders (Exhaust / Afterburner)
+import hawkRearImg from '../../../assets/images/hawk_rear_render_1788011397687.jpg';
+import t50RearImg from '../../../assets/images/t50_rear_render_1788011453492.jpg';
 import f16RearImg from '../../../assets/images/f16_rear_render_1787665762596.jpg';
 import su30RearImg from '../../../assets/images/su30_rear_render_1787665801763.jpg';
 import rafaleRearImg from '../../../assets/images/rafale_rear_render_1787665855516.jpg';
@@ -182,7 +188,64 @@ export const FrontAircraftSilhouette: React.FC<FrontAircraftSilhouetteProps> = (
       ]
     };
 
-    if (acType.includes('su27') || acType.includes('su30') || acType.includes('su57') || acType.includes('sukhoi')) {
+    if (acType.includes('hawk') || acType.includes('hawk-209') || acType.includes('hawk-109')) {
+      front = hawkFrontImg;
+      side = hawkSideImg;
+      rear = hawkRearImg;
+      label = 'BAE HAWK 109/209 LIGHT FIGHTER';
+      engineType = 'Rolls-Royce Turbomeca Adour Mk 871 (6,000 lbf)';
+      radarType = 'APG-66H Multimode Pulse-Doppler Radar';
+      cannonType = 'Aden 30mm Gun Pod / Underwing Munitions';
+
+      callouts = {
+        front: [
+          { id: 'hwk-radome', title: 'APG-66H RADOME', subtitle: 'Multimode pulse-doppler air-to-air & sea radar', top: '50%', left: '50%', align: 'left' },
+          { id: 'hwk-canopy', title: 'COMBAT COCKPIT', subtitle: 'Single-seat bubble canopy with Martin-Baker Mk 10B', top: '28%', left: '46%', align: 'right' },
+          { id: 'hwk-intakes', title: 'SHOULDER AIR INTAKES', subtitle: 'Twin lateral low-drag engine inlets', top: '58%', left: '38%', align: 'right' },
+          { id: 'hwk-gear', title: 'NOSE LANDING GEAR', subtitle: 'Steerable pneumatic forward gear assembly', top: '78%', left: '52%', align: 'left' }
+        ],
+        side: [
+          { id: 'hwk-nose-s', title: 'SLENDER PROFILED NOSE', subtitle: 'APG-66H avionics & pitot-static system', top: '56%', left: '12%', align: 'left' },
+          { id: 'hwk-cockpit-s', title: 'MARTIN-BAKER MK10B', subtitle: 'Zero-zero rocket ejection seat system', top: '34%', left: '26%', align: 'right' },
+          { id: 'hwk-wing-s', title: 'SWEPT TRANSONIC WING', subtitle: 'Low-wing with vortex generators & 4 pylons', top: '58%', left: '50%', align: 'left' },
+          { id: 'hwk-tail-s', title: 'ALL-MOVING TAILPLANE', subtitle: 'Anhedral stabilator for high pitch control', top: '24%', left: '85%', align: 'right' }
+        ],
+        rear: [
+          { id: 'hwk-exhaust-r', title: 'ADOUR MK 871 EXHAUST', subtitle: 'Unreheated high-efficiency turbofan nozzle', top: '56%', left: '50%', align: 'left' },
+          { id: 'hwk-tail-r', title: 'SWEPT VERTICAL FIN', subtitle: 'High authority rudder & VHF/UHF antenna', top: '22%', left: '48%', align: 'right' },
+          { id: 'hwk-stabs-r', title: 'ANHEDRAL STABILATORS', subtitle: 'Differential pitch and roll trim surfaces', top: '56%', left: '26%', align: 'right' }
+        ]
+      };
+    } else if (acType.includes('t50') || acType.includes('t-50') || acType.includes('golden-eagle') || acType.includes('t50i')) {
+      front = t50FrontImg;
+      side = t50SideImg;
+      rear = t50RearImg;
+      label = 'KAI T-50i GOLDEN EAGLE';
+      engineType = 'General Electric F404-GE-102 with Afterburner (17,700 lbf)';
+      radarType = 'Lockheed Martin / Elta EL/M-2032 Multimode Radar';
+      cannonType = 'General Dynamics 20mm A-50 3-Barrel Gatling Gun';
+
+      callouts = {
+        front: [
+          { id: 't50-radome', title: 'EL/M-2032 RADOME', subtitle: 'Multimode pulse-doppler air-to-air radar', top: '48%', left: '50%', align: 'left' },
+          { id: 't50-canopy', title: 'TANDEM STEPPED CANOPY', subtitle: 'Dual tandem seating with wide FOV HUD', top: '26%', left: '46%', align: 'right' },
+          { id: 't50-inlets', title: 'SIDE-MOUNTED INTAKES', subtitle: 'Diverterless supersonic intake configuration', top: '62%', left: '38%', align: 'right' },
+          { id: 't50-gear', title: 'HEAVY TRICYCLE GEAR', subtitle: 'High sink-rate training & combat landing gear', top: '80%', left: '52%', align: 'left' }
+        ],
+        side: [
+          { id: 't50-nose-s', title: 'SUPERSONIC CHINED NOSE', subtitle: 'Streamlined low-drag forward fuselage', top: '54%', left: '10%', align: 'left' },
+          { id: 't50-tandem-s', title: 'MARTIN-BAKER MK16 KR6', subtitle: 'Dual zero-zero ejection seats', top: '34%', left: '26%', align: 'right' },
+          { id: 't50-gun-s', title: 'A-50 20MM 3-BARREL GUN', subtitle: 'Internal port-side Gatling gun (205 rounds)', top: '46%', left: '34%', align: 'left' },
+          { id: 't50-wing-s', title: 'MID-MOUNTED SWEPT WING', subtitle: 'Wingtip missile rails for AIM-9 Sidewinder', top: '56%', left: '52%', align: 'left' },
+          { id: 't50-tail-s', title: 'SWEPT VERTICAL FIN', subtitle: 'Fly-by-wire composite rudder & RWR', top: '22%', left: '85%', align: 'right' }
+        ],
+        rear: [
+          { id: 't50-nozzle-r', title: 'F404-GE-102 AFTERBURNER', subtitle: 'Convergent-divergent supersonic exhaust nozzle', top: '55%', left: '50%', align: 'left' },
+          { id: 't50-fin-r', title: 'TALL VERTICAL EMPENNAGE', subtitle: 'Single swept tail fin with UHF comms blade', top: '20%', left: '48%', align: 'right' },
+          { id: 't50-stabs-r', title: 'ALL-MOVING HORIZONTAL TAILS', subtitle: 'Full-flying stabilators for Mach 1.5 pitch control', top: '58%', left: '24%', align: 'right' }
+        ]
+      };
+    } else if (acType.includes('su27') || acType.includes('su30') || acType.includes('su57') || acType.includes('sukhoi')) {
       front = su30FrontImg;
       side = su30SideImg;
       rear = su30RearImg;

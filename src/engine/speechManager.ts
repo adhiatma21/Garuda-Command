@@ -20,6 +20,8 @@ class RadioSpeechManager {
   private voices: SpeechSynthesisVoice[] = [];
   private currentLanguage: 'id' | 'en' = 'id';
   private radioGapTimeout: any = null;
+  private currentSafetyTimer: any = null;
+  private sessionToken = 0;
   private lastSpokenText = '';
   private lastSpokenTime = 0;
 
@@ -146,6 +148,7 @@ class RadioSpeechManager {
 
     this.isProcessing = true;
     const currentItem = this.queue[0];
+    const currentToken = ++this.sessionToken;
     this.lastSpokenText = currentItem.text;
     this.lastSpokenTime = Date.now();
 
@@ -168,45 +171,49 @@ class RadioSpeechManager {
       }
 
       // Safety timeout in case browser never fires onend (e.g. Chrome speech synthesis freeze bug)
-      const estimatedDurationMs = Math.max(3000, (currentItem.text.length / 14) * 1000 + 3000);
+      const estimatedDurationMs = Math.max(2500, (currentItem.text.length / 14) * 1000 + 2500);
       let hasEnded = false;
 
       const finishCurrent = () => {
-        if (hasEnded) return;
+        if (hasEnded || this.sessionToken !== currentToken) return;
         hasEnded = true;
         this.stopKeepAlive();
-        if (currentItem.onEnd) currentItem.onEnd();
+        if (this.currentSafetyTimer) {
+          clearTimeout(this.currentSafetyTimer);
+          this.currentSafetyTimer = null;
+        }
 
         // Pop the completed item
         if (this.queue.length > 0 && this.queue[0].id === currentItem.id) {
           this.queue.shift();
         }
 
-        // Natural tactical radio transmission gap (400ms) before next pilot/tower speech
+        // Natural tactical radio transmission gap (300ms) before next pilot/tower speech
         if (this.radioGapTimeout) clearTimeout(this.radioGapTimeout);
         this.radioGapTimeout = setTimeout(() => {
-          this.processQueue();
-        }, 400);
+          if (this.sessionToken === currentToken) {
+            this.processQueue();
+          }
+        }, 300);
       };
 
-      const safetyTimer = setTimeout(() => {
-        if (!hasEnded) {
+      if (this.currentSafetyTimer) clearTimeout(this.currentSafetyTimer);
+      this.currentSafetyTimer = setTimeout(() => {
+        if (!hasEnded && this.sessionToken === currentToken) {
           finishCurrent();
         }
       }, estimatedDurationMs);
 
       utterance.onstart = () => {
-        if (currentItem.onStart) currentItem.onStart();
+        if (this.sessionToken !== currentToken) return;
         this.startKeepAlive();
       };
 
       utterance.onend = () => {
-        clearTimeout(safetyTimer);
         finishCurrent();
       };
 
-      utterance.onerror = (e) => {
-        clearTimeout(safetyTimer);
+      utterance.onerror = () => {
         finishCurrent();
       };
 
@@ -223,7 +230,11 @@ class RadioSpeechManager {
       console.warn('SpeechSynthesis error:', err);
       if (this.queue.length > 0) this.queue.shift();
       this.isProcessing = false;
-      setTimeout(() => this.processQueue(), 200);
+      setTimeout(() => {
+        if (this.sessionToken === currentToken) {
+          this.processQueue();
+        }
+      }, 200);
     }
   }
 
@@ -248,7 +259,12 @@ class RadioSpeechManager {
   }
 
   public clearQueue() {
+    this.sessionToken = Date.now();
     this.queue = [];
+    if (this.currentSafetyTimer) {
+      clearTimeout(this.currentSafetyTimer);
+      this.currentSafetyTimer = null;
+    }
     if (this.radioGapTimeout) {
       clearTimeout(this.radioGapTimeout);
       this.radioGapTimeout = null;

@@ -487,6 +487,9 @@ export interface PlayableSquadron {
   mottoEn: string;
   callsignPrefix: string;
   established: string;
+  unlockPrice: number;
+  minRank: string;
+  minRankIndex: number;
 }
 
 export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
@@ -506,7 +509,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Sayap Perkasa Penjaga Khatulistiwa',
     mottoEn: 'Mighty Wings Guarding the Equator',
     callsignPrefix: 'ELANG',
-    established: '1950'
+    established: '1950',
+    unlockPrice: 250000000,
+    minRank: 'Letda',
+    minRankIndex: 0
   },
   {
     id: 'sq3',
@@ -524,7 +530,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Swa Bhuwana Paksa - Pantang Pulang Sebelum Menang',
     mottoEn: 'Wings of the Nation - Never Return Before Victory',
     callsignPrefix: 'DRAGON',
-    established: '1951'
+    established: '1951',
+    unlockPrice: 750000000,
+    minRank: 'Mayor',
+    minRankIndex: 3
   },
   {
     id: 'sq11',
@@ -542,7 +551,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Kilat Perkasa Menggetarkan Angkasa',
     mottoEn: 'Mighty Thunder Shaking the Heavens',
     callsignPrefix: 'THUNDER',
-    established: '1974'
+    established: '1974',
+    unlockPrice: 1000000000,
+    minRank: 'Letkol',
+    minRankIndex: 4
   },
   {
     id: 'sq12',
@@ -560,7 +572,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Kekuatan Tersembunyi Penyergap Cepat',
     mottoEn: 'Stealth and Swift Strike Power',
     callsignPrefix: 'PANTHER',
-    established: '1982'
+    established: '1982',
+    unlockPrice: 1500000000,
+    minRank: 'Kolonel',
+    minRankIndex: 5
   },
   {
     id: 'sq14',
@@ -578,7 +593,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Harimau Mengaum di Langit Nusantara',
     mottoEn: 'Roaring Tigers Guarding the Archipelago',
     callsignPrefix: 'TIGER',
-    established: '1962'
+    established: '1962',
+    unlockPrice: 600000000,
+    minRank: 'Kapten',
+    minRankIndex: 2
   },
   {
     id: 'sq15',
@@ -596,7 +614,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Satya Bhakti Praja Yudha',
     mottoEn: 'Loyalty in Defense and Flight Excellence',
     callsignPrefix: 'EAGLE',
-    established: '1980'
+    established: '1980',
+    unlockPrice: 450000000,
+    minRank: 'Lettu',
+    minRankIndex: 1
   },
   {
     id: 'sq16',
@@ -614,7 +635,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Tombak Pengawal Batas Negeri',
     mottoEn: 'Spearhead of the Sovereign Skies',
     callsignPrefix: 'RYDDER',
-    established: '1985'
+    established: '1985',
+    unlockPrice: 650000000,
+    minRank: 'Kapten',
+    minRankIndex: 2
   },
   {
     id: 'sq21',
@@ -632,7 +656,10 @@ export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
     mottoId: 'Ketepatan Menghancurkan Ancaman Darat',
     mottoEn: 'Precision Close Air Support and Counter-Insurgency',
     callsignPrefix: 'TUCO',
-    established: '2004'
+    established: '2004',
+    unlockPrice: 300000000,
+    minRank: 'Letda',
+    minRankIndex: 0
   }
 ];
 

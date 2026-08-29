@@ -44,7 +44,9 @@ export const HangarBayView: React.FC<HangarBayViewProps> = ({
     let num = propTailNumber;
 
     if (!num || num === 'TS-1601') {
-      if (acId.includes('f16-emlu') || acId.includes('f16-cd') || acId.includes('f16')) {
+      if (acId.includes('hawk') || acId.includes('hawk-209') || acId.includes('hawk-109')) {
+        num = 'TT-0201';
+      } else if (acId.includes('f16-emlu') || acId.includes('f16-cd') || acId.includes('f16')) {
         num = 'TS-1601';
       } else if (acId.includes('su27')) {
         num = 'TS-2701';
@@ -85,7 +87,12 @@ export const HangarBayView: React.FC<HangarBayViewProps> = ({
     let length = 15.06;
     let airframeClass = 'SUPERSONIC MULTIROLE FIGHTER';
 
-    if (acId.includes('f16')) {
+    if (acId.includes('hawk') || acId.includes('hawk-209') || acId.includes('hawk-109')) {
+      wingspan = 9.94;
+      height = 4.00;
+      length = 11.38;
+      airframeClass = 'LIGHT COMBAT & TACTICAL STRIKE (LIFT)';
+    } else if (acId.includes('f16')) {
       wingspan = 9.96;
       height = 5.09;
       length = 15.06;

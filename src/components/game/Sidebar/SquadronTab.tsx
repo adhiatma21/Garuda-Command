@@ -42,8 +42,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { Aircraft, Crew, PlayerProfile, OwnedAircraft, SquadronCrewRoster, FacilityState, AircraftGenerationUpgrade } from '../../../types';
-import { SQUADRON_DATA, AIRCRAFT_PRESETS } from '../../../constants';
-import { MilitaryAirport } from '../../../airports';
+import { SQUADRON_DATA, AIRCRAFT_PRESETS, PLAYABLE_SQUADRONS, PlayableSquadron } from '../../../constants';
+import { MilitaryAirport, MILITARY_AIRPORTS } from '../../../airports';
 import { 
   INITIAL_SQUADRON_BUDGET, 
   HANGAR_LEVELS, 
@@ -55,6 +55,7 @@ import {
 } from '../../../data/squadronState';
 import { SquadronWeaponsView } from './SquadronWeaponsView';
 import { SquadronGenUpgradeView } from './SquadronGenUpgradeView';
+import { SquadronListView } from './SquadronListView';
 
 interface SquadronTabProps {
   language: 'id' | 'en';
@@ -85,6 +86,18 @@ const SQUADRON_DETAILS: Record<string, {
   accentBorder: string;
   role: string;
 }> = {
+  'Skadron Udara 1': {
+    nickname: 'Elang',
+    mottoId: 'Sayap Perkasa Penjaga Khatulistiwa',
+    mottoEn: 'Mighty Wings Guarding the Equator',
+    callsignPrefix: 'ELANG',
+    established: '1950',
+    specialtyId: 'Serang Darat Taktis & Pertahanan Udara Ringan Hawk 109/209',
+    specialtyEn: 'Tactical Ground Attack & Light Air Defense Hawk 109/209',
+    crestColor: 'from-amber-600 to-yellow-950',
+    accentBorder: 'border-amber-500/40',
+    role: 'Light fighter / attack'
+  },
   'Skadron Udara 3': {
     nickname: 'The Dragon',
     mottoId: 'Swa Bhuwana Paksa - Pantang Pulang Sebelum Menang',
@@ -302,12 +315,32 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
   // Sub-view inside Fleet: 'my_fleet' | 'buy_aircraft'
   const [fleetSubTab, setFleetSubTab] = useState<'my_fleet' | 'buy_aircraft'>('my_fleet');
 
-  // 1. Resolve User's Squadron from Profile
-  const currentSquadronName = useMemo(() => {
-    if (playerProfile?.squadron) return playerProfile.squadron;
-    const matchedSq = SQUADRON_DATA.find(sq => sq.aircraftIds.includes(selectedAircraft.id));
-    return matchedSq?.name || 'Skadron Udara 3';
-  }, [playerProfile, selectedAircraft]);
+  // View Mode: 'list' (Daftar 8 Skuadron Pemain) | 'detail' (Detail Manajemen Skuadron)
+  const [viewMode, setViewMode] = useState<'detail' | 'list'>('detail');
+
+  // Selected Squadron ID
+  const [selectedSquadronId, setSelectedSquadronId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ais_active_squadron_id');
+      if (saved && PLAYABLE_SQUADRONS.some(s => s.id === saved)) return saved;
+    } catch (e) {}
+    if (playerProfile?.squadron) {
+      const found = PLAYABLE_SQUADRONS.find(s => s.name.toLowerCase().includes(playerProfile.squadron.toLowerCase()));
+      if (found) return found.id;
+    }
+    const matchedSq = PLAYABLE_SQUADRONS.find(s => s.aircraftId === selectedAircraft.id);
+    return matchedSq?.id || 'sq3';
+  });
+
+  const currentPlayableSquadron = useMemo(() => {
+    return PLAYABLE_SQUADRONS.find(s => s.id === selectedSquadronId) || PLAYABLE_SQUADRONS[1];
+  }, [selectedSquadronId]);
+
+  const currentSquadronName = currentPlayableSquadron.name;
+
+  const squadronDesignatedAircraft = useMemo(() => {
+    return AIRCRAFT_PRESETS.find(p => p.id === currentPlayableSquadron.aircraftId) || selectedAircraft;
+  }, [currentPlayableSquadron, selectedAircraft]);
 
   const squadronData = useMemo(() => {
     return SQUADRON_DATA.find(sq => sq.name === currentSquadronName) || SQUADRON_DATA[0];
@@ -315,23 +348,23 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
 
   const squadronMeta = useMemo(() => {
     return SQUADRON_DETAILS[currentSquadronName] || {
-      nickname: 'Garuda Fighter',
-      mottoId: 'Swa Bhuwana Paksa',
-      mottoEn: 'Wings of the Nation',
-      callsignPrefix: 'GARUDA',
-      established: '1951',
-      specialtyId: 'Operasi Pertahanan Udara Taktis',
-      specialtyEn: 'Tactical Air Defense Operations',
-      crestColor: 'from-blue-600 to-slate-900',
-      accentBorder: 'border-blue-500/40',
-      role: 'Tactical Squadron'
+      nickname: currentPlayableSquadron.nickname || 'Garuda Fighter',
+      mottoId: currentPlayableSquadron.mottoId || 'Swa Bhuwana Paksa',
+      mottoEn: currentPlayableSquadron.mottoEn || 'Wings of the Nation',
+      callsignPrefix: currentPlayableSquadron.callsignPrefix || 'GARUDA',
+      established: currentPlayableSquadron.established || '1951',
+      specialtyId: currentPlayableSquadron.role,
+      specialtyEn: currentPlayableSquadron.role,
+      crestColor: currentPlayableSquadron.badgeColor || 'from-blue-600 to-slate-900',
+      accentBorder: currentPlayableSquadron.accentBorder || 'border-blue-500/40',
+      role: currentPlayableSquadron.role
     };
-  }, [currentSquadronName]);
+  }, [currentSquadronName, currentPlayableSquadron]);
 
   // ==========================================
   // PERSISTENT SQUADRON STATE (LocalStorage)
   // ==========================================
-  const storageKey = useMemo(() => `ais_sq_state_${currentSquadronName}`, [currentSquadronName]);
+  const storageKey = useMemo(() => `ais_sq_state_${currentPlayableSquadron.id}`, [currentPlayableSquadron.id]);
 
   // 1. Budget / Dana Skuadron
   const [budget, setBudget] = useState<number>(() => {
@@ -342,7 +375,7 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     return INITIAL_SQUADRON_BUDGET;
   });
 
-  // 2. Owned Aircraft List (Default starts with 1 aircraft)
+  // 2. Owned Aircraft List (Default starts with 1 aircraft of squadron designated type)
   const [ownedFleet, setOwnedFleet] = useState<OwnedAircraft[]>(() => {
     try {
       const saved = localStorage.getItem(`${storageKey}_owned_fleet`);
@@ -351,8 +384,7 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    // Default 1 aircraft
-    return [createDefaultOwnedAircraft(selectedAircraft, currentSquadronName)];
+    return [createDefaultOwnedAircraft(squadronDesignatedAircraft, currentSquadronName)];
   });
 
   // 3. Crew Roster (Ground, Tech, Fuel, Electric, Flight)
@@ -364,7 +396,7 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         if (parsed?.groundCrew) return parsed;
       }
     } catch (e) {}
-    return createDefaultCrewRoster(playerProfile?.commanderName || 'Mayor Adhiatma', crew.callSign || 'LEADER-01');
+    return createDefaultCrewRoster(playerProfile?.commanderName || 'Mayor Adhiatma', `${currentPlayableSquadron.callsignPrefix}-01`);
   });
 
   // 4. Hangar & Apron Facility Levels (Default Level 1 = 2 aircraft capacity each)
@@ -427,6 +459,116 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
 
   // 8. Service Facility Sub-tabs: 'facilities' | 'gen_upgrade' | 'diagnostics'
   const [serviceSubTab, setServiceSubTab] = useState<'facilities' | 'gen_upgrade' | 'diagnostics'>('facilities');
+
+  // Load squadron state helper
+  const handleSelectSquadron = (sq: PlayableSquadron) => {
+    setSelectedSquadronId(sq.id);
+    try {
+      localStorage.setItem('ais_active_squadron_id', sq.id);
+    } catch (e) {}
+
+    const key = `ais_sq_state_${sq.id}`;
+    const acPreset = AIRCRAFT_PRESETS.find(p => p.id === sq.aircraftId) || selectedAircraft;
+
+    let b = INITIAL_SQUADRON_BUDGET;
+    let fleet: OwnedAircraft[] = [createDefaultOwnedAircraft(acPreset, sq.name)];
+    let roster = createDefaultCrewRoster(playerProfile?.commanderName || 'Mayor Adhiatma', `${sq.callsignPrefix}-01`);
+    let hLvl = 0;
+    let aLvl = 0;
+    let weaps = ['aim9x', 'aim120c', 'gbu12', 'mk82_bomb', 'sniper_xr', 'tank_300gal', 'r73'];
+    let hp = {
+      wingtip: 'aim9x',
+      outboard: 'aim120c',
+      inboard: 'tank_300gal',
+      conformal: null,
+      centerline: 'sniper_xr'
+    };
+
+    try {
+      const sBudget = localStorage.getItem(`${key}_budget`);
+      if (sBudget) b = Number(sBudget);
+
+      const sFleet = localStorage.getItem(`${key}_owned_fleet`);
+      if (sFleet) {
+        const p = JSON.parse(sFleet);
+        if (Array.isArray(p) && p.length > 0) fleet = p;
+      }
+
+      const sRoster = localStorage.getItem(`${key}_crew_roster`);
+      if (sRoster) {
+        const p = JSON.parse(sRoster);
+        if (p?.groundCrew) roster = p;
+      }
+
+      const sHangar = localStorage.getItem(`${key}_hangar_level`);
+      if (sHangar !== null) hLvl = Number(sHangar);
+
+      const sApron = localStorage.getItem(`${key}_apron_level`);
+      if (sApron !== null) aLvl = Number(sApron);
+
+      const sWeaps = localStorage.getItem(`${key}_unlocked_weapons`);
+      if (sWeaps) {
+        const p = JSON.parse(sWeaps);
+        if (Array.isArray(p) && p.length > 0) weaps = p;
+      }
+
+      const sHp = localStorage.getItem(`${key}_hardpoints`);
+      if (sHp) {
+        const p = JSON.parse(sHp);
+        if (p) hp = p;
+      }
+    } catch (e) {}
+
+    setBudget(b);
+    setOwnedFleet(fleet);
+    setCrewRoster(roster);
+    setHangarLevelIndex(hLvl);
+    setApronLevelIndex(aLvl);
+    setUnlockedWeaponIds(weaps);
+    setHardpoints(hp);
+    setActiveHealthTail(fleet[0]?.tailNumber || 'TS-1601');
+    setViewMode('detail');
+
+    if (speak) {
+      speak(
+        language === 'id'
+          ? `Beralih ke ${sq.fullName} di ${sq.baseName}. Pesawat tugas: ${sq.aircraftName}.`
+          : `Switched command to ${sq.fullName} at ${sq.baseName}. Aircraft: ${sq.aircraftName}.`
+      );
+    }
+  };
+
+  // Activate squadron for flight simulator
+  const handleActivateSquadronForFlight = (sq: PlayableSquadron) => {
+    handleSelectSquadron(sq);
+    const ac = AIRCRAFT_PRESETS.find(p => p.id === sq.aircraftId) || selectedAircraft;
+    setSelectedAircraft(ac);
+
+    const matchedAirport = MILITARY_AIRPORTS.find(
+      ap => ap.icao === sq.baseIcao || ap.name.toLowerCase().includes(sq.baseName.toLowerCase())
+    );
+    if (matchedAirport && setDepartureAirport) {
+      setDepartureAirport(matchedAirport);
+    }
+
+    if (setInitialFuel) setInitialFuel(ac.maxFuel);
+    if (setFuelRemaining) setFuelRemaining(ac.maxFuel);
+    if (setTargetSpeed) setTargetSpeed(ac.cruiseSpeed);
+
+    setCrew({
+      ...crew,
+      callSign: `${sq.callsignPrefix}-01`
+    });
+
+    const msg = language === 'id'
+      ? `${sq.fullName} (${sq.aircraftName}) di ${sq.baseName} siap siaga untuk operasi penerbangan simulator!`
+      : `${sq.fullName} (${sq.aircraftName}) at ${sq.baseName} deployed for simulator flight!`;
+    setTransactionFeedback(msg);
+
+    if (onNavigateToFlight) {
+      onNavigateToFlight();
+    }
+  };
 
   // Sync state changes to LocalStorage
   useEffect(() => {
@@ -846,12 +988,87 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       exit={{ opacity: 0, x: -10 }} 
       className="p-3.5 space-y-3.5 text-white"
     >
-      {/* SQUADRON IDENTITY & MILITARY BUDGET TOP HEADER */}
-      <div className={cn(
-        "p-4 rounded-2xl bg-gradient-to-br border shadow-xl relative overflow-hidden",
-        squadronMeta.crestColor,
-        squadronMeta.accentBorder
-      )}>
+      {viewMode === 'list' ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between bg-black/40 p-2 rounded-xl border border-white/10">
+            <span className="text-[8.5px] font-mono text-cyan-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" />
+              <span>{language === 'id' ? 'PILIH SKUADRON TEMPUR UNTUK DIKELOLA' : 'SELECT COMBAT SQUADRON TO MANAGE'}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setViewMode('detail')}
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[8px] font-mono font-bold uppercase transition-all shadow"
+            >
+              {language === 'id' ? 'Buka Skuadron Aktif →' : 'Open Active Squadron →'}
+            </button>
+          </div>
+
+          <SquadronListView
+            language={language}
+            playableSquadrons={PLAYABLE_SQUADRONS}
+            activeSquadronId={selectedSquadronId}
+            onSelectSquadron={handleSelectSquadron}
+            onActivateForFlight={handleActivateSquadronForFlight}
+            formatCurrency={formatCurrency}
+            playerProfile={playerProfile}
+          />
+        </div>
+      ) : (
+        <>
+          {/* SQUADRON COMMAND SWITCHER & HUB BAR */}
+          <div className="p-2 bg-black/60 border border-white/10 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className="py-1.5 px-3 bg-blue-600/20 hover:bg-blue-600/40 text-cyan-300 border border-blue-500/40 rounded-xl text-[8.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow active:scale-95"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{language === 'id' ? '← Daftar Semua Skuadron (8)' : '← All Squadrons List (8)'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleActivateSquadronForFlight(currentPlayableSquadron)}
+                className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[8.5px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                title="Deploy Pesawat & Lanud Skuadron ke Simulator"
+              >
+                <Plane className="w-3.5 h-3.5" />
+                <span>{language === 'id' ? 'Aktifkan Terbang' : 'Deploy Flight'}</span>
+              </button>
+            </div>
+
+            {/* Horizontal Quick-Select Pills for 8 Squadrons */}
+            <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-0.5">
+              {PLAYABLE_SQUADRONS.map((sq) => {
+                const isSelected = sq.id === selectedSquadronId;
+                return (
+                  <button
+                    key={sq.id}
+                    type="button"
+                    onClick={() => handleSelectSquadron(sq)}
+                    className={cn(
+                      "px-2 py-1 rounded-lg text-[7.5px] font-mono font-bold shrink-0 flex items-center gap-1 transition-all border",
+                      isSelected
+                        ? "bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-600/30 scale-105"
+                        : "bg-white/5 text-white/60 border-white/10 hover:border-white/25 hover:text-white"
+                    )}
+                  >
+                    <Shield className="w-2.5 h-2.5" />
+                    <span className="truncate max-w-[85px]">{sq.name.replace('Skadron Udara ', 'Skadron ')}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* SQUADRON IDENTITY & MILITARY BUDGET TOP HEADER */}
+          <div className={cn(
+            "p-4 rounded-2xl bg-gradient-to-br border shadow-xl relative overflow-hidden",
+            squadronMeta.crestColor,
+            squadronMeta.accentBorder
+          )}>
         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
           <Shield className="w-32 h-32 text-white" />
         </div>
@@ -2141,6 +2358,8 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
           />
         )}
       </div>
+      </>
+      )}
     </motion.div>
   );
 };

@@ -5,6 +5,24 @@ export const REACH_THRESHOLD = 0.5; // 0.5 Nautical Miles
 export const AIRCRAFT_PRESETS: Aircraft[] = [
   // Fighters & Combat
   { 
+    id: 'hawk-209', 
+    name: 'BAE Hawk 109/209', 
+    maxFuel: 3200, 
+    burnRate: 8, 
+    cruiseSpeed: 420, 
+    emptyWeight: 9800,
+    maxTakeoffWeight: 20060,
+    type: 'fighter',
+    image: 'https://images.unsplash.com/photo-1517976384346-3136801d605d?auto=format&fit=crop&w=800&q=80',
+    specs: {
+      engine: '1x Rolls-Royce Turbomeca Adour Mk 871',
+      maxSpeed: 'Mach 0.88 (644 mph)',
+      range: '2,520 km',
+      ceiling: '44,000 ft',
+      armament: '30mm ADEN Gun Pod, AIM-9 Sidewinder, Mk 82'
+    }
+  },
+  { 
     id: 'f16-emlu', 
     name: 'F-16 Fighting Falcon (F-16AM/BM eMLU)', 
     maxFuel: 7000, 
@@ -452,13 +470,180 @@ export const INDONESIAN_AIRBASES = [
   'Lanud Suryadarma', 'Lanud Husein Sastranegara'
 ];
 
+export interface PlayableSquadron {
+  id: string;
+  name: string;
+  fullName: string;
+  nickname: string;
+  baseName: string;
+  baseLocation: string;
+  baseIcao: string;
+  aircraftId: string;
+  aircraftName: string;
+  role: string;
+  badgeColor: string;
+  accentBorder: string;
+  mottoId: string;
+  mottoEn: string;
+  callsignPrefix: string;
+  established: string;
+}
+
+export const PLAYABLE_SQUADRONS: PlayableSquadron[] = [
+  {
+    id: 'sq1',
+    name: 'Skadron Udara 1',
+    fullName: 'Skadron Udara 1 "Elang"',
+    nickname: 'Elang',
+    baseName: 'Lanud Supadio',
+    baseLocation: 'Pontianak, Kalimantan Barat',
+    baseIcao: 'WIOO',
+    aircraftId: 'hawk-209',
+    aircraftName: 'Hawk 109/209',
+    role: 'Light fighter / attack',
+    badgeColor: 'from-amber-600 to-yellow-950',
+    accentBorder: 'border-amber-500/40',
+    mottoId: 'Sayap Perkasa Penjaga Khatulistiwa',
+    mottoEn: 'Mighty Wings Guarding the Equator',
+    callsignPrefix: 'ELANG',
+    established: '1950'
+  },
+  {
+    id: 'sq3',
+    name: 'Skadron Udara 3',
+    fullName: 'Skadron Udara 3 "Naga"',
+    nickname: 'Naga',
+    baseName: 'Lanud Iswahjudi',
+    baseLocation: 'Madiun, Jawa Timur',
+    baseIcao: 'WARI',
+    aircraftId: 'f16-emlu',
+    aircraftName: 'F-16 AM/BM Fighting Falcon',
+    role: 'Multirole fighter',
+    badgeColor: 'from-blue-600 to-indigo-950',
+    accentBorder: 'border-blue-500/40',
+    mottoId: 'Swa Bhuwana Paksa - Pantang Pulang Sebelum Menang',
+    mottoEn: 'Wings of the Nation - Never Return Before Victory',
+    callsignPrefix: 'DRAGON',
+    established: '1951'
+  },
+  {
+    id: 'sq11',
+    name: 'Skadron Udara 11',
+    fullName: 'Skadron Udara 11 "Thunder"',
+    nickname: 'Thunder',
+    baseName: 'Lanud Sultan Hasanuddin',
+    baseLocation: 'Makassar, Sulawesi Selatan',
+    baseIcao: 'WAAA',
+    aircraftId: 'su30',
+    aircraftName: 'Su-27SK / Su-30MK2',
+    role: 'Heavy multirole fighter',
+    badgeColor: 'from-red-600 to-slate-950',
+    accentBorder: 'border-red-500/40',
+    mottoId: 'Kilat Perkasa Menggetarkan Angkasa',
+    mottoEn: 'Mighty Thunder Shaking the Heavens',
+    callsignPrefix: 'THUNDER',
+    established: '1974'
+  },
+  {
+    id: 'sq12',
+    name: 'Skadron Udara 12',
+    fullName: 'Skadron Udara 12 "Black Panther"',
+    nickname: 'Black Panther',
+    baseName: 'Lanud Roesmin Nurjadin',
+    baseLocation: 'Pekanbaru, Riau',
+    baseIcao: 'WIBB',
+    aircraftId: 'rafale',
+    aircraftName: 'Dassault Rafale',
+    role: '4.5-generation multirole fighter',
+    badgeColor: 'from-purple-600 to-slate-950',
+    accentBorder: 'border-purple-500/40',
+    mottoId: 'Kekuatan Tersembunyi Penyergap Cepat',
+    mottoEn: 'Stealth and Swift Strike Power',
+    callsignPrefix: 'PANTHER',
+    established: '1982'
+  },
+  {
+    id: 'sq14',
+    name: 'Skadron Udara 14',
+    fullName: 'Skadron Udara 14',
+    nickname: 'The Tiger',
+    baseName: 'Lanud Iswahjudi',
+    baseLocation: 'Madiun, Jawa Timur',
+    baseIcao: 'WARI',
+    aircraftId: 'f16-cd',
+    aircraftName: 'F-16 Fighting Falcon',
+    role: 'Multirole fighter',
+    badgeColor: 'from-orange-600 to-stone-950',
+    accentBorder: 'border-orange-500/40',
+    mottoId: 'Harimau Mengaum di Langit Nusantara',
+    mottoEn: 'Roaring Tigers Guarding the Archipelago',
+    callsignPrefix: 'TIGER',
+    established: '1962'
+  },
+  {
+    id: 'sq15',
+    name: 'Skadron Udara 15',
+    fullName: 'Skadron Udara 15',
+    nickname: 'The Golden Eagle',
+    baseName: 'Lanud Iswahjudi',
+    baseLocation: 'Madiun, Jawa Timur',
+    baseIcao: 'WARI',
+    aircraftId: 't50i',
+    aircraftName: 'T-50i Golden Eagle',
+    role: 'Lead-in fighter trainer / light fighter',
+    badgeColor: 'from-yellow-500 to-slate-950',
+    accentBorder: 'border-yellow-400/40',
+    mottoId: 'Satya Bhakti Praja Yudha',
+    mottoEn: 'Loyalty in Defense and Flight Excellence',
+    callsignPrefix: 'EAGLE',
+    established: '1980'
+  },
+  {
+    id: 'sq16',
+    name: 'Skadron Udara 16',
+    fullName: 'Skadron Udara 16 "Rydder"',
+    nickname: 'Rydder',
+    baseName: 'Lanud Roesmin Nurjadin',
+    baseLocation: 'Pekanbaru, Riau',
+    baseIcao: 'WIBB',
+    aircraftId: 'f16-cd',
+    aircraftName: 'F-16 Fighting Falcon',
+    role: 'Multirole fighter',
+    badgeColor: 'from-cyan-600 to-slate-950',
+    accentBorder: 'border-cyan-500/40',
+    mottoId: 'Tombak Pengawal Batas Negeri',
+    mottoEn: 'Spearhead of the Sovereign Skies',
+    callsignPrefix: 'RYDDER',
+    established: '1985'
+  },
+  {
+    id: 'sq21',
+    name: 'Skadron Udara 21',
+    fullName: 'Skadron Udara 21',
+    nickname: 'Tuco',
+    baseName: 'Lanud Abdulrachman Saleh',
+    baseLocation: 'Malang, Jawa Timur',
+    baseIcao: 'WARS',
+    aircraftId: 'super-tucano',
+    aircraftName: 'EMB-314 Super Tucano',
+    role: 'Light attack / COIN',
+    badgeColor: 'from-emerald-600 to-slate-950',
+    accentBorder: 'border-emerald-500/40',
+    mottoId: 'Ketepatan Menghancurkan Ancaman Darat',
+    mottoEn: 'Precision Close Air Support and Counter-Insurgency',
+    callsignPrefix: 'TUCO',
+    established: '2004'
+  }
+];
+
 export const SQUADRON_DATA = [
+  { id: 'sq1', name: 'Skadron Udara 1', aircraftIds: ['hawk-209'], location: 'Lanud Supadio' },
   { id: 'sq3', name: 'Skadron Udara 3', aircraftIds: ['f16-emlu'], location: 'Lanud Iswahjudi' },
-  { id: 'sq14', name: 'Skadron Udara 14', aircraftIds: ['f16-cd'], location: 'Lanud Iswahjudi' },
   { id: 'sq11', name: 'Skadron Udara 11', aircraftIds: ['su27', 'su30'], location: 'Lanud Sultan Hasanuddin' },
-  { id: 'sq15', name: 'Skadron Udara 15', aircraftIds: ['t50i'], location: 'Lanud Iswahjudi' },
   { id: 'sq12', name: 'Skadron Udara 12', aircraftIds: ['rafale'], location: 'Lanud Roesmin Nurjadin' },
-  { id: 'sq16', name: 'Skadron Udara 16', aircraftIds: ['super-tucano'], location: 'Lanud Roesmin Nurjadin' }, // Adjusted from Super Tucano (usually SQ 16 is F-16 or Hawk, but let's follow user list if possible)
+  { id: 'sq14', name: 'Skadron Udara 14', aircraftIds: ['f16-cd'], location: 'Lanud Iswahjudi' },
+  { id: 'sq15', name: 'Skadron Udara 15', aircraftIds: ['t50i'], location: 'Lanud Iswahjudi' },
+  { id: 'sq16', name: 'Skadron Udara 16', aircraftIds: ['f16-cd'], location: 'Lanud Roesmin Nurjadin' },
   { id: 'sq21', name: 'Skadron Udara 21', aircraftIds: ['super-tucano'], location: 'Lanud Abdulrachman Saleh' },
   { id: 'sq31', name: 'Skadron Udara 31', aircraftIds: ['c130', 'c17'], location: 'Lanud Halim Perdanakusuma' },
   { id: 'sq32', name: 'Skadron Udara 32', aircraftIds: ['c130'], location: 'Lanud Abdulrachman Saleh' },

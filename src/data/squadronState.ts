@@ -807,6 +807,14 @@ export const APRON_LEVELS: FacilityState[] = [
 
 export const AIRCRAFT_PROCUREMENT_CATALOG = [
   {
+    presetId: 'hawk-209',
+    price: 280000000,
+    roleId: 'Pesawat Tempur Taktis Ringan & Serang Darat (Hawk 109/209)',
+    roleEn: 'Light Tactical Fighter & Ground Attack Hawk 109/209',
+    includedCrewCount: 9,
+    recommendedFor: 'Skadron Udara 1'
+  },
+  {
     presetId: 'f16-emlu',
     price: 450000000,
     roleId: 'Pesawat Tempur Sergap Supersonik (Air Superiority)',
@@ -924,7 +932,9 @@ export function generateTailNumber(aircraft: Aircraft, existingCount: number, sq
   const acId = aircraft.id.toLowerCase();
   let prefix = 'TS-16';
 
-  if (acId.includes('f16-emlu') || acId.includes('f16-cd') || acId.includes('f16')) {
+  if (acId.includes('hawk')) {
+    prefix = 'TT-02';
+  } else if (acId.includes('f16-emlu') || acId.includes('f16-cd') || acId.includes('f16')) {
     prefix = squadronName.includes('14') ? 'TS-52' : 'TS-16';
   } else if (acId.includes('su27')) {
     prefix = 'TS-27';

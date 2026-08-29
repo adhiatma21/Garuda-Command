@@ -427,8 +427,23 @@ export const MILITARY_MEDALS_REWARDS_DATA: MilitaryMedalReward[] = [
   }
 ];
 
-export function buildSquadronFinanceDetails(squadronIds: string[]): SquadronFinanceDetail[] {
+export function buildSquadronFinanceDetails(squadronIds: string[], unlockedSquadronIds: string[] = ['sq1', 'sq3']): SquadronFinanceDetail[] {
   return squadronIds.map(sqId => {
+    const isUnlocked = unlockedSquadronIds.includes(sqId);
+    
+    // Read real squadron state from localStorage if available
+    let realFleetCount = 0;
+    let savedBudget = 0;
+    try {
+      const fleetStr = localStorage.getItem(`ais_sq_state_${sqId}_owned_fleet`);
+      if (fleetStr) {
+        const parsed = JSON.parse(fleetStr);
+        if (Array.isArray(parsed) && parsed.length > 0) realFleetCount = parsed.length;
+      }
+      const bStr = localStorage.getItem(`ais_sq_state_${sqId}_budget`);
+      if (bStr) savedBudget = Number(bStr);
+    } catch (e) {}
+
     const metrics = SQUADRON_FINANCE_METRICS[sqId] || {
       name: `Skadron Udara (${sqId})`,
       nickname: 'Garuda',
@@ -445,12 +460,19 @@ export function buildSquadronFinanceDetails(squadronIds: string[]): SquadronFina
       monthlyMunitionsQuota: 1000000000
     };
 
-    const monthlyPilotPayroll = metrics.pilotCount * metrics.pilotSalaryRate;
-    const monthlyCrewPayroll = (metrics.technicianCount + metrics.groundCrewCount) * metrics.crewSalaryRate;
-    const monthlyMaintenanceCost = metrics.aircraftCount * metrics.avgMaintenancePerJet;
-    const monthlyFuelBurnCost = metrics.monthlyFuelBurnAverage;
-    const monthlyMunitionsCost = metrics.monthlyMunitionsQuota;
-    const totalMonthlyExpenses = monthlyPilotPayroll + monthlyCrewPayroll + monthlyMaintenanceCost + monthlyFuelBurnCost + monthlyMunitionsCost;
+    const effectiveAircraftCount = realFleetCount > 0 ? realFleetCount : metrics.aircraftCount;
+    const effectivePilots = isUnlocked ? metrics.pilotCount : 0;
+    const effectiveTechs = isUnlocked ? metrics.technicianCount : 0;
+    const effectiveGround = isUnlocked ? metrics.groundCrewCount : 0;
+
+    const monthlyPilotPayroll = isUnlocked ? effectivePilots * metrics.pilotSalaryRate : 0;
+    const monthlyCrewPayroll = isUnlocked ? (effectiveTechs + effectiveGround) * metrics.crewSalaryRate : 0;
+    const monthlyMaintenanceCost = isUnlocked ? effectiveAircraftCount * metrics.avgMaintenancePerJet : 0;
+    const monthlyFuelBurnCost = isUnlocked ? metrics.monthlyFuelBurnAverage : 0;
+    const monthlyMunitionsCost = isUnlocked ? metrics.monthlyMunitionsQuota : 0;
+    const totalMonthlyExpenses = isUnlocked 
+      ? (monthlyPilotPayroll + monthlyCrewPayroll + monthlyMaintenanceCost + monthlyFuelBurnCost + monthlyMunitionsCost)
+      : 0;
 
     return {
       id: sqId,
@@ -458,19 +480,21 @@ export function buildSquadronFinanceDetails(squadronIds: string[]): SquadronFina
       nickname: metrics.nickname,
       aircraftId: metrics.aircraftId,
       aircraftName: metrics.aircraftName,
-      aircraftCount: metrics.aircraftCount,
-      operationalRate: 92, // 92% readiness
-      pilotCount: metrics.pilotCount,
-      technicianCount: metrics.technicianCount,
-      groundCrewCount: metrics.groundCrewCount,
+      aircraftCount: isUnlocked ? effectiveAircraftCount : 0,
+      operationalRate: isUnlocked ? 92 : 0,
+      pilotCount: effectivePilots,
+      technicianCount: effectiveTechs,
+      groundCrewCount: effectiveGround,
       monthlyPilotPayroll,
       monthlyCrewPayroll,
       monthlyMaintenanceCost,
       monthlyFuelBurnCost,
       monthlyMunitionsCost,
       totalMonthlyExpenses,
-      monthlyBudgetQuota: totalMonthlyExpenses * 1.15, // Allocated with 15% operational buffer
-      readinessScore: 94
+      monthlyBudgetQuota: totalMonthlyExpenses > 0 ? totalMonthlyExpenses * 1.15 : 0,
+      readinessScore: isUnlocked ? 94 : 0,
+      isActive: isUnlocked,
+      individualBudget: savedBudget > 0 ? savedBudget : (isUnlocked ? 1000000000 : 0)
     };
   });
 }
@@ -479,15 +503,22 @@ export function generateInitialLanudFinanceProfile(
   lanudName: string,
   commanderName = 'Marsekal Pertama TNI Pratama',
   commanderRank = 'Marsma TNI',
-  commanderCallsign = 'GARUDA-01'
+  commanderCallsign = 'GARUDA-01',
+  unlockedSquadronIds: string[] = ['sq1', 'sq3']
 ): LanudFinancialProfile {
   const config = INDONESIAN_LANUD_FINANCE_CONFIGS[lanudName] || INDONESIAN_LANUD_FINANCE_CONFIGS['Lanud Iswahjudi'];
-  const squadrons = buildSquadronFinanceDetails(config.squadronIds);
+  const squadrons = buildSquadronFinanceDetails(config.squadronIds, unlockedSquadronIds);
 
-  const totalSquadronExpenses = squadrons.reduce((acc, s) => acc + s.totalMonthlyExpenses, 0);
-  const hangarAndBaseOverhead = 4500000000; // 4.5 Miliar overhead LANUD
+  const activeSquadrons = squadrons.filter(s => s.isActive);
+  const activeCount = activeSquadrons.length;
+
+  const totalSquadronExpenses = activeSquadrons.reduce((acc, s) => acc + s.totalMonthlyExpenses, 0);
+  const hangarAndBaseOverhead = activeCount > 0 ? 3000000000 + (activeCount * 800000000) : 1500000000;
   const totalBaseExpenses = totalSquadronExpenses + hangarAndBaseOverhead;
-  const monthlyGovernmentDipa = Math.max(config.baseMonthlyDipa, totalBaseExpenses * 1.25);
+  
+  // DIPA strictly matches active squadrons (scaled proportionally)
+  const baseDipa = config.baseMonthlyDipa * (activeCount > 0 ? (activeCount / config.squadronIds.length) : 0.4);
+  const monthlyGovernmentDipa = Math.max(baseDipa, totalBaseExpenses * 1.2);
 
   const initialTransactions: FinanceTransaction[] = [
     {
@@ -498,83 +529,91 @@ export function generateInitialLanudFinanceProfile(
       category: 'GOVERNMENT_BUDGET',
       amount: monthlyGovernmentDipa,
       title: 'Pencairan DIPA Induk Kemhan / Mabes TNI AU',
-      description: `Alokasi rutin APBN operasional pangkalan udara ${config.name} (${config.lanudClass}) untuk ${squadrons.length} skuadron organik.`,
+      description: activeCount > 0 
+        ? `Alokasi rutin APBN operasional pangkalan udara ${config.name} (${config.lanudClass}) untuk ${activeCount} skuadron organik aktif.`
+        : `Alokasi minimum pemeliharaan pangkalan udara ${config.name} (Status Siaga Cadangan).`,
       referenceCode: `DIPA-KEMHAN-${config.icao}-2026/08`,
-      status: 'AUDITED'
-    },
-    {
-      id: 'trx-init-payroll-01',
-      date: new Date(Date.now() - 86400000 * 4).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: Date.now() - 86400000 * 4,
-      type: 'EXPENSE',
-      category: 'PILOT_SALARIES',
-      amount: squadrons.reduce((acc, s) => acc + s.monthlyPilotPayroll, 0),
-      title: 'Gaji Pokok & Tunjangan Bahaya Terbang Pilot',
-      description: `Pembayaran gaji resmi dan tunjangan resiko terbang untuk ${squadrons.reduce((acc, s) => acc + s.pilotCount, 0)} penerbang tempur aktif.`,
-      referenceCode: `PAY-PLT-${config.icao}-0826`,
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'trx-init-crew-01',
-      date: new Date(Date.now() - 86400000 * 4).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: Date.now() - 86400000 * 4,
-      type: 'EXPENSE',
-      category: 'CREW_SALARIES',
-      amount: squadrons.reduce((acc, s) => acc + s.monthlyCrewPayroll, 0),
-      title: 'Gaji Teknisi Avionik & Ground Crew',
-      description: `Payroll bulanan teknisi pemeliharaan alutsista dan kru pemeliharaan darat pangkalan.`,
-      referenceCode: `PAY-CRW-${config.icao}-0826`,
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'trx-init-maint-01',
-      date: new Date(Date.now() - 86400000 * 3).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: Date.now() - 86400000 * 3,
-      type: 'EXPENSE',
-      category: 'AIRCRAFT_MAINTENANCE',
-      amount: squadrons.reduce((acc, s) => acc + s.monthlyMaintenanceCost, 0),
-      title: 'Pemeliharaan Berkala & Kalibrasi Avionik',
-      description: `Inspeksi 100-jam terbang, kalibrasi radar AESA, pengecekan sistem hidrolik jet tempur.`,
-      referenceCode: `MNT-FLT-${config.icao}-8821`,
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'trx-init-fuel-01',
-      date: new Date(Date.now() - 86400000 * 2).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: Date.now() - 86400000 * 2,
-      type: 'EXPENSE',
-      category: 'FUEL_LOGISTICS',
-      amount: squadrons.reduce((acc, s) => acc + s.monthlyFuelBurnCost, 0),
-      title: 'Pengisian Tangki Depot Avtur Pertamina Aviation',
-      description: `Pengadaan pasokan bahan bakar Jet A-1 / JP-8 untuk kesiapan sortie patroli CAP dan latihan tempur.`,
-      referenceCode: `LOG-FUEL-${config.icao}-9901`,
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'trx-init-munitions-01',
-      date: new Date(Date.now() - 86400000 * 1).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: Date.now() - 86400000 * 1,
-      type: 'EXPENSE',
-      category: 'WEAPONS_MUNITIONS',
-      amount: squadrons.reduce((acc, s) => acc + s.monthlyMunitionsCost, 0),
-      title: 'Restok Munisi Gudang Senjata (Armory Restock)',
-      description: `Pengadaan munisi kanon 20mm M61A1 Vulcan dan inspeksi kesiapan rudal AIM-120 AMRAAM & AIM-9X.`,
-      referenceCode: `ORD-RESTOK-${config.icao}-4412`,
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'trx-init-bonus-mission',
-      date: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: Date.now(),
-      type: 'INCOME',
-      category: 'MISSION_BONUS',
-      amount: 1500000000,
-      title: 'Bonus Keberhasilan Operasi Patroli & Pengamanan Udara',
-      description: `Tunjangan operasi taktis khusus yang dikreditkan langsung ke kas Lanud atas kesiapan tempur tinggi.`,
-      referenceCode: `BONUS-OPS-LANUD-771`,
       status: 'AUDITED'
     }
   ];
+
+  if (activeCount > 0) {
+    initialTransactions.push(
+      {
+        id: 'trx-init-payroll-01',
+        date: new Date(Date.now() - 86400000 * 4).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timestamp: Date.now() - 86400000 * 4,
+        type: 'EXPENSE',
+        category: 'PILOT_SALARIES',
+        amount: activeSquadrons.reduce((acc, s) => acc + s.monthlyPilotPayroll, 0),
+        title: 'Gaji Pokok & Tunjangan Bahaya Terbang Pilot',
+        description: `Pembayaran gaji resmi dan tunjangan resiko terbang untuk ${activeSquadrons.reduce((acc, s) => acc + s.pilotCount, 0)} penerbang tempur aktif.`,
+        referenceCode: `PAY-PLT-${config.icao}-0826`,
+        status: 'CONFIRMED'
+      },
+      {
+        id: 'trx-init-crew-01',
+        date: new Date(Date.now() - 86400000 * 4).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timestamp: Date.now() - 86400000 * 4,
+        type: 'EXPENSE',
+        category: 'CREW_SALARIES',
+        amount: activeSquadrons.reduce((acc, s) => acc + s.monthlyCrewPayroll, 0),
+        title: 'Gaji Teknisi Avionik & Ground Crew',
+        description: `Payroll bulanan teknisi pemeliharaan alutsista dan kru pemeliharaan darat pangkalan aktif.`,
+        referenceCode: `PAY-CRW-${config.icao}-0826`,
+        status: 'CONFIRMED'
+      },
+      {
+        id: 'trx-init-maint-01',
+        date: new Date(Date.now() - 86400000 * 3).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timestamp: Date.now() - 86400000 * 3,
+        type: 'EXPENSE',
+        category: 'AIRCRAFT_MAINTENANCE',
+        amount: activeSquadrons.reduce((acc, s) => acc + s.monthlyMaintenanceCost, 0),
+        title: 'Pemeliharaan Berkala & Kalibrasi Avionik',
+        description: `Inspeksi 100-jam terbang, kalibrasi radar AESA, pengecekan sistem hidrolik jet tempur armada aktif.`,
+        referenceCode: `MNT-FLT-${config.icao}-8821`,
+        status: 'CONFIRMED'
+      },
+      {
+        id: 'trx-init-fuel-01',
+        date: new Date(Date.now() - 86400000 * 2).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timestamp: Date.now() - 86400000 * 2,
+        type: 'EXPENSE',
+        category: 'FUEL_LOGISTICS',
+        amount: activeSquadrons.reduce((acc, s) => acc + s.monthlyFuelBurnCost, 0),
+        title: 'Pengisian Tangki Depot Avtur Pertamina Aviation',
+        description: `Pengadaan pasokan bahan bakar Jet A-1 / JP-8 untuk kesiapan sortie patroli CAP dan latihan tempur.`,
+        referenceCode: `LOG-FUEL-${config.icao}-9901`,
+        status: 'CONFIRMED'
+      },
+      {
+        id: 'trx-init-munitions-01',
+        date: new Date(Date.now() - 86400000 * 1).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timestamp: Date.now() - 86400000 * 1,
+        type: 'EXPENSE',
+        category: 'WEAPONS_MUNITIONS',
+        amount: activeSquadrons.reduce((acc, s) => acc + s.monthlyMunitionsCost, 0),
+        title: 'Restok Munisi Gudang Senjata (Armory Restock)',
+        description: `Pengadaan munisi kanon 20mm M61A1 Vulcan dan inspeksi kesiapan rudal AIM-120 AMRAAM & AIM-9X.`,
+        referenceCode: `ORD-RESTOK-${config.icao}-4412`,
+        status: 'CONFIRMED'
+      }
+    );
+  }
+
+  initialTransactions.push({
+    id: 'trx-init-bonus-mission',
+    date: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+    timestamp: Date.now(),
+    type: 'INCOME',
+    category: 'MISSION_BONUS',
+    amount: 1500000000,
+    title: 'Bonus Keberhasilan Operasi Patroli & Pengamanan Udara',
+    description: `Tunjangan operasi taktis khusus yang dikreditkan langsung ke kas Lanud atas kesiapan tempur tinggi.`,
+    referenceCode: `BONUS-OPS-LANUD-771`,
+    status: 'AUDITED'
+  });
 
   const totalIncome = initialTransactions.filter(t => t.type === 'INCOME').reduce((a, b) => a + b.amount, 0);
   const totalExpense = initialTransactions.filter(t => t.type === 'EXPENSE').reduce((a, b) => a + b.amount, 0);

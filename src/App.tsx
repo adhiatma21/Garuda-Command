@@ -2322,6 +2322,7 @@ export default function App() {
                 flightHours={flightHours}
                 speak={speak}
                 onNavigateToFlight={() => setActiveTab('flight')}
+                onNavigateToSquadron={() => setActiveTab('squadron')}
               />
             </div>
           ) : (

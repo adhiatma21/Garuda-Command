@@ -54,6 +54,8 @@ export interface SquadronFinanceDetail {
   totalMonthlyExpenses: number;
   monthlyBudgetQuota: number;
   readinessScore: number; // 0-100
+  isActive?: boolean;
+  individualBudget?: number;
 }
 
 export interface LanudFinancialProfile {

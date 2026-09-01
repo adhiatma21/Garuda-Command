@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   Droplets, 
@@ -23,12 +23,14 @@ import {
   Users,
   Gauge,
   Zap,
-  Info
+  Info,
+  Plus,
+  MapPin
 } from 'lucide-react';
 import { cn, getDistance } from '../../../lib/utils';
 import { calculateAircraftWeights } from '../../../lib/weightCalculation';
 import { AirportSelector } from '../AirportSelector';
-import { Waypoint, Aircraft, Crew, PlayerProfile, ReconState } from '../../../types';
+import { Waypoint, Aircraft, Crew, PlayerProfile, ReconState, PlannerWaypoint } from '../../../types';
 import { MilitaryAirport } from '../../../airports';
 import { AIRCRAFT_PRESETS } from '../../../constants';
 import { GeneralFlightPlanner } from '../GeneralFlightPlanner';
@@ -116,6 +118,14 @@ interface FlightTabProps {
   isStrikeCompleted?: boolean;
   simulationSpeed?: number;
   onSetSimulationSpeed?: (s: number) => void;
+  isManualWaypointMode?: boolean;
+  setIsManualWaypointMode?: (v: boolean) => void;
+  isPickingVvipRV?: boolean;
+  setIsPickingVvipRV?: (v: boolean) => void;
+  isPickingReconSurvey?: boolean;
+  setIsPickingReconSurvey?: (v: boolean) => void;
+  plannerWaypoints?: PlannerWaypoint[];
+  setPlannerWaypoints?: React.Dispatch<React.SetStateAction<PlannerWaypoint[]>>;
 }
 
 const MISSION_OPTIONS = [
@@ -211,6 +221,45 @@ const MISSION_OPTIONS = [
   }
 ];
 
+const PATROL_PRESETS = [
+  {
+    nameId: 'Sektor Selat Sunda & Banten',
+    nameEn: 'Sunda Strait & Banten Sector',
+    points: [
+      { name: 'PATROL-1 (Ujung Kulon)', lat: -6.75, lng: 105.35 },
+      { name: 'PATROL-2 (Krakatau Outer)', lat: -6.10, lng: 105.42 },
+      { name: 'PATROL-3 (Merak Crossing)', lat: -5.90, lng: 105.95 }
+    ]
+  },
+  {
+    nameId: 'Sektor ZEE Laut Natuna Utara',
+    nameEn: 'North Natuna Sea EEZ Sector',
+    points: [
+      { name: 'PATROL-1 (Ranai Outer)', lat: 4.25, lng: 108.40 },
+      { name: 'PATROL-2 (ZEE Border Line)', lat: 5.60, lng: 109.20 },
+      { name: 'PATROL-3 (Terumbu Karang)', lat: 4.80, lng: 107.50 }
+    ]
+  },
+  {
+    nameId: 'Sektor Selat Malaka',
+    nameEn: 'Malacca Strait Sector',
+    points: [
+      { name: 'PATROL-1 (Rupat Island)', lat: 2.10, lng: 101.60 },
+      { name: 'PATROL-2 (Bengkalis)', lat: 1.50, lng: 102.30 },
+      { name: 'PATROL-3 (Karimun Outer)', lat: 1.15, lng: 103.40 }
+    ]
+  },
+  {
+    nameId: 'Sektor Blok Ambalat (Kaltara)',
+    nameEn: 'Ambalat Block Sector (North Borneo)',
+    points: [
+      { name: 'PATROL-1 (Tarakan North)', lat: 3.50, lng: 117.80 },
+      { name: 'PATROL-2 (Ambalat EEZ Ridge)', lat: 4.10, lng: 118.50 },
+      { name: 'PATROL-3 (Nunukan Border)', lat: 4.20, lng: 117.65 }
+    ]
+  }
+];
+
 export const FlightTab: React.FC<FlightTabProps> = ({
   language,
   crew,
@@ -289,8 +338,21 @@ export const FlightTab: React.FC<FlightTabProps> = ({
   isTargetLocked = false,
   isStrikeCompleted = false,
   simulationSpeed = 1,
-  onSetSimulationSpeed
+  onSetSimulationSpeed,
+  isManualWaypointMode = false,
+  setIsManualWaypointMode,
+  isPickingVvipRV = false,
+  setIsPickingVvipRV,
+  isPickingReconSurvey = false,
+  setIsPickingReconSurvey,
+  plannerWaypoints = [],
+  setPlannerWaypoints
 }) => {
+  const [patrolLat, setPatrolLat] = useState('');
+  const [patrolLng, setPatrolLng] = useState('');
+  const [patrolName, setPatrolName] = useState('');
+  const [showPatrolForm, setShowPatrolForm] = useState(false);
+
   const weightBreakdown = useMemo(() => {
     return calculateAircraftWeights(selectedAircraft, crew, payload, useSubTank, combatMode);
   }, [selectedAircraft, crew, payload, useSubTank, combatMode]);
@@ -424,6 +486,10 @@ export const FlightTab: React.FC<FlightTabProps> = ({
           onRTB={onRTB}
           isRTB={isRTB}
           deleteCurrentRoute={deleteCurrentRoute}
+          plannerWaypoints={plannerWaypoints}
+          setPlannerWaypoints={setPlannerWaypoints}
+          isManualWaypointMode={isManualWaypointMode}
+          setIsManualWaypointMode={setIsManualWaypointMode}
         />
       )}
 
@@ -500,23 +566,253 @@ export const FlightTab: React.FC<FlightTabProps> = ({
                 <motion.div 
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
-                  className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl space-y-3"
+                  className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl space-y-4"
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Target className="w-4 h-4 text-blue-400" />
-                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{language === 'id' ? 'MISI PATROLI' : 'PATROL MISSION'}</h4>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{language === 'id' ? 'MISI PATROLI UDARA' : 'AIR PATROL MISSION'}</h4>
+                    </div>
+                    <span className="text-[8px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase font-bold">
+                      {departureAirport?.icao || 'WIHH'}
+                    </span>
                   </div>
-                  <p className="text-[8px] text-white/50 leading-relaxed uppercase">
+
+                  <p className="text-[8.5px] text-white/60 leading-relaxed">
                     {language === 'id' 
-                      ? 'Klik pada peta taktis untuk menentukan rute patroli. Pesawat akan memulai dari Home Base dan kembali secara otomatis.' 
-                      : 'Click on the tactical map to define patrol route. Aircraft will start from Home Base and return automatically.'}
+                      ? 'Tentukan sektor patroli menggunakan tombol mode klik peta di bawah, pilih preset sektor taktis TNI-AU, atau masukkan koordinat manual.' 
+                      : 'Define patrol route using map-click toggle below, select tactical TNI-AU presets, or enter manual coordinates.'}
                   </p>
-                  <div className="pt-2 border-t border-white/5 flex flex-col gap-2">
-                    <div className="flex justify-between items-center text-[9px]">
-                      <span className="text-white/30 uppercase">{language === 'id' ? 'Pangkalan' : 'Home Base'}</span>
-                      <span className="text-white font-bold">{departureAirport?.icao || '---'}</span>
+
+                  {/* Quick Map-Click Mode Toggle Button for Patrol */}
+                  {setIsManualWaypointMode && (
+                    <button
+                      type="button"
+                      onClick={() => setIsManualWaypointMode(!isManualWaypointMode)}
+                      className={cn(
+                        "w-full py-2.5 px-3 rounded-xl border text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md",
+                        isManualWaypointMode
+                          ? "bg-emerald-500 text-black border-emerald-300 ring-2 ring-emerald-400/50 animate-pulse font-mono"
+                          : "bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50"
+                      )}
+                    >
+                      <Crosshair className="w-3.5 h-3.5" />
+                      <span>
+                        {isManualWaypointMode
+                          ? (language === 'id' ? '📍 MODE KLIK PETA AKTIF (KLIK PETA UNTUK WAYPOINT)' : '📍 MAP CLICK MODE ACTIVE (CLICK MAP TO ADD)')
+                          : (language === 'id' ? '📍 Mode Tempatkan Waypoint di Peta (Klik Peta)' : '📍 Place Waypoints on Map (Map Click Mode)')}
+                      </span>
+                    </button>
+                  )}
+
+                  {/* Preset Patrol Sectors */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[8.5px] font-bold uppercase tracking-wider text-white/50 block">
+                      {language === 'id' ? 'Rute Preset Patroli Taktis:' : 'Tactical Patrol Sector Presets:'}
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {PATROL_PRESETS.map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            const dep = departureAirport || {
+                              icao: 'WIHH',
+                              name: 'Halim Perdanakusuma AFB (Jakarta)',
+                              lat: -6.2667,
+                              lng: 106.8833,
+                              country: 'Indonesia'
+                            };
+
+                            const wps: Waypoint[] = [
+                              {
+                                id: 'dep-' + dep.icao,
+                                name: dep.icao + ' - ' + dep.name,
+                                lat: dep.lat,
+                                lng: dep.lng,
+                                reached: false,
+                                type: 'airport',
+                                planAltitude: 0,
+                                planSpeed: 0
+                              },
+                              ...preset.points.map((p, pIdx) => ({
+                                id: 'patrol-preset-' + pIdx + '-' + Date.now(),
+                                name: p.name,
+                                lat: p.lat,
+                                lng: p.lng,
+                                reached: false,
+                                type: 'waypoint' as const,
+                                planAltitude: targetAltitude || 25000,
+                                planSpeed: selectedAircraft.cruiseSpeed
+                              })),
+                              {
+                                id: 'arr-' + dep.icao,
+                                name: dep.icao + ' - ' + dep.name,
+                                lat: dep.lat,
+                                lng: dep.lng,
+                                reached: false,
+                                type: 'airport',
+                                planAltitude: 0,
+                                planSpeed: 0
+                              }
+                            ];
+
+                            const planned = calculateFuelPlan(wps, initialFuel, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
+                            setWaypoints(planned);
+                          }}
+                          className="p-2 bg-white/5 hover:bg-emerald-500/10 border border-white/10 hover:border-emerald-500/30 rounded-xl text-left transition-all group"
+                        >
+                          <div className="text-[9px] font-black text-emerald-300 group-hover:text-emerald-200 truncate">
+                            {language === 'id' ? preset.nameId : preset.nameEn}
+                          </div>
+                          <div className="text-[7.5px] text-white/40 font-mono mt-0.5">
+                            {preset.points.length} Sektor Waypoint
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   </div>
+
+                  {/* Manual Coordinates Input Option */}
+                  <div className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[8.5px] font-bold uppercase tracking-wider text-white/50">
+                        {language === 'id' ? 'Input Koordinat Patroli Manual:' : 'Manual Patrol Coordinate Input:'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPatrolForm(!showPatrolForm)}
+                        className="text-[8px] font-mono text-emerald-400 hover:underline"
+                      >
+                        {showPatrolForm ? (language === 'id' ? 'Tutup Form' : 'Close') : (language === 'id' ? '+ Buka Form Input' : '+ Open Input')}
+                      </button>
+                    </div>
+
+                    {showPatrolForm && (
+                      <div className="space-y-2 pt-1">
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            placeholder="Nama Sektor"
+                            value={patrolName}
+                            onChange={(e) => setPatrolName(e.target.value)}
+                            className="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-[9.5px] text-white font-mono focus:outline-none focus:border-emerald-400"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Lat (-6.25)"
+                            value={patrolLat}
+                            onChange={(e) => setPatrolLat(e.target.value)}
+                            className="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-[9.5px] text-white font-mono focus:outline-none focus:border-emerald-400"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Lng (106.85)"
+                            value={patrolLng}
+                            onChange={(e) => setPatrolLng(e.target.value)}
+                            className="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-[9.5px] text-white font-mono focus:outline-none focus:border-emerald-400"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const lat = parseFloat(patrolLat);
+                            const lng = parseFloat(patrolLng);
+                            if (isNaN(lat) || isNaN(lng)) return;
+
+                            const customWp: Waypoint = {
+                              id: 'patrol-custom-' + Date.now(),
+                              name: patrolName.trim() || `PATROL-WP-0${waypoints.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-')).length + 1}`,
+                              lat: Number(lat.toFixed(4)),
+                              lng: Number(lng.toFixed(4)),
+                              reached: false,
+                              type: 'waypoint',
+                              planAltitude: targetAltitude || 25000,
+                              planSpeed: selectedAircraft.cruiseSpeed
+                            };
+
+                            setWaypoints(prev => {
+                              const dep = prev.find(w => w.id.startsWith('dep-')) || (departureAirport ? {
+                                id: 'dep-' + departureAirport.icao,
+                                name: departureAirport.icao + ' - ' + departureAirport.name,
+                                lat: departureAirport.lat,
+                                lng: departureAirport.lng,
+                                reached: false,
+                                type: 'airport' as const,
+                                planAltitude: 0,
+                                planSpeed: 0
+                              } : null);
+
+                              const midPoints = prev.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-'));
+                              const arr = prev.find(w => w.id.startsWith('arr-')) || (departureAirport ? {
+                                id: 'arr-' + departureAirport.icao,
+                                name: departureAirport.icao + ' - ' + departureAirport.name,
+                                lat: departureAirport.lat,
+                                lng: departureAirport.lng,
+                                reached: false,
+                                type: 'airport' as const,
+                                planAltitude: 0,
+                                planSpeed: 0
+                              } : null);
+
+                              const combined = [
+                                ...(dep ? [dep] : []),
+                                ...midPoints,
+                                customWp,
+                                ...(arr ? [arr] : [])
+                              ];
+
+                              return calculateFuelPlan(combined, initialFuel, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
+                            });
+
+                            setPatrolLat('');
+                            setPatrolLng('');
+                            setPatrolName('');
+                          }}
+                          className="w-full py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 rounded-lg text-[9px] font-black uppercase text-emerald-200 flex items-center justify-center gap-1.5 transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{language === 'id' ? 'Tambahkan Waypoint Patroli' : 'Add Patrol Waypoint'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Active Patrol Waypoints List */}
+                  {waypoints.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-')).length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between text-[8.5px] font-mono text-white/40 uppercase">
+                        <span>{language === 'id' ? 'Waypoint Rute Patroli Aktif' : 'Active Patrol Waypoints'}</span>
+                        <span>{waypoints.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-')).length} Poin</span>
+                      </div>
+                      <div className="max-h-36 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                        {waypoints.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-')).map((wp, idx) => (
+                          <div key={wp.id} className="flex items-center justify-between p-2 bg-white/5 border border-white/5 rounded-lg text-[9px] font-mono">
+                            <div className="flex items-center gap-2 truncate">
+                              <span className="w-4 h-4 rounded bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[8px]">
+                                {idx + 1}
+                              </span>
+                              <span className="text-white font-bold truncate">{wp.name}</span>
+                              <span className="text-white/40 text-[7.5px]">{wp.lat.toFixed(3)}, {wp.lng.toFixed(3)}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWaypoints(prev => {
+                                  const filtered = prev.filter(item => item.id !== wp.id);
+                                  return calculateFuelPlan(filtered, initialFuel, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
+                                });
+                              }}
+                              className="p-1 text-white/30 hover:text-red-400 transition-colors"
+                              title="Hapus Waypoint"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -573,9 +869,30 @@ export const FlightTab: React.FC<FlightTabProps> = ({
                       />
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       <label className="text-[9px] text-white/30 uppercase font-bold tracking-widest">{language === 'id' ? 'Titik Rendezvous (Pertemuan)' : 'Rendezvous Point'}</label>
                       
+                      {/* Interactive Map Click Mode Toggle for VVIP RV */}
+                      {setIsPickingVvipRV && (
+                        <button
+                          type="button"
+                          onClick={() => setIsPickingVvipRV(!isPickingVvipRV)}
+                          className={cn(
+                            "w-full py-2.5 px-3 rounded-xl border text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md",
+                            isPickingVvipRV
+                              ? "bg-amber-500 text-black border-amber-300 ring-2 ring-amber-400/50 animate-pulse font-mono"
+                              : "bg-amber-950/40 text-amber-300 border-amber-500/40 hover:bg-amber-900/50"
+                          )}
+                        >
+                          <Crosshair className="w-3.5 h-3.5" />
+                          <span>
+                            {isPickingVvipRV
+                              ? (language === 'id' ? '📍 MODE PILIH TITIK RV AKTIF (KLIK PETA)' : '📍 PICK RV MODE ACTIVE (CLICK MAP)')
+                              : (language === 'id' ? '📍 Mode Pilih Titik RV di Peta (Klik Peta)' : '📍 Pick RV Point on Map (Map Click Mode)')}
+                          </span>
+                        </button>
+                      )}
+
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <label className="text-[8px] text-white/20 uppercase">{language === 'id' ? 'Latitude' : 'Latitude'}</label>
@@ -601,6 +918,7 @@ export const FlightTab: React.FC<FlightTabProps> = ({
 
                       <div className="flex gap-2">
                         <button 
+                          type="button"
                           onClick={() => {
                             const lat = parseFloat(rendezvousLat);
                             const lng = parseFloat(rendezvousLng);
@@ -617,11 +935,12 @@ export const FlightTab: React.FC<FlightTabProps> = ({
                               });
                             }
                           }}
-                          className="flex-1 py-2 bg-blue-600/30 border border-blue-500/30 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600/50 transition-all"
+                          className="flex-1 py-2 bg-amber-600/30 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-amber-600/50 transition-all text-amber-200"
                         >
                           {language === 'id' ? 'Set Koordinat Manual' : 'Set Manual Coordinates'}
                         </button>
                         <button 
+                          type="button"
                           onClick={() => {
                               if (waypoints.length > 0) {
                                   const lastWp = [...waypoints].reverse().find(w => !w.id.startsWith('arr-'));
@@ -649,7 +968,7 @@ export const FlightTab: React.FC<FlightTabProps> = ({
                         </div>
                       )}
                       
-                      <p className="text-[8px] text-blue-400/40 italic font-medium px-1">
+                      <p className="text-[8px] text-amber-400/50 italic font-medium px-1">
                         {language === 'id' 
                           ? '*Pilot harus menemui pesawat VVIP di titik ini sebelum pengawalan aktif.' 
                           : '*Pilot must intercept VVIP aircraft at this rendezvous point.'}
@@ -830,6 +1149,8 @@ export const FlightTab: React.FC<FlightTabProps> = ({
                     onSetSurveyPoints={onSetReconSurveyPoints}
                     onStartReconFlight={onStartReconFlight}
                     isReconAirborne={isReconAirborne}
+                    isPickingReconSurvey={isPickingReconSurvey}
+                    setIsPickingReconSurvey={setIsPickingReconSurvey}
                   />
 
                   {/* Part 2: Tactical Recon Intel Console & Fighter Strike Scramble */}

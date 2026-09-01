@@ -36,6 +36,7 @@ interface SquadronListViewProps {
   onSelectSquadron: (sq: PlayableSquadron) => void;
   onActivateForFlight?: (sq: PlayableSquadron) => void;
   onUnlockSquadron?: (sq: PlayableSquadron) => void;
+  onOpenCommissioningPipeline?: (sq: PlayableSquadron) => void;
   formatCurrency: (val: number) => string;
   playerProfile: PlayerProfile | null;
   currentBudget?: number;
@@ -49,6 +50,7 @@ export const SquadronListView: React.FC<SquadronListViewProps> = ({
   onSelectSquadron,
   onActivateForFlight,
   onUnlockSquadron,
+  onOpenCommissioningPipeline,
   formatCurrency,
   playerProfile,
   currentBudget = 1000000000
@@ -346,23 +348,38 @@ export const SquadronListView: React.FC<SquadronListViewProps> = ({
                         )}
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setPurchaseModalSquadron(sq)}
-                        className={cn(
-                          "w-full py-2.5 px-3 rounded-xl font-mono text-[8.5px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md active:scale-98",
-                          canAffordAndUnlock
-                            ? "bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white shadow-amber-600/30 animate-pulse"
-                            : "bg-amber-950/40 border border-amber-500/30 text-amber-300/80 hover:bg-amber-900/40"
+                      <div className="flex items-center gap-2 w-full">
+                        {onOpenCommissioningPipeline && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenCommissioningPipeline(sq)}
+                            className="flex-1 py-2 px-3 bg-gradient-to-r from-blue-700/80 to-indigo-700/80 hover:from-blue-600 hover:to-indigo-600 border border-blue-400/40 rounded-xl font-mono text-[8.5px] font-black text-white uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-98"
+                            title="Buka Tahapan Pipeline: Hanggar, Apron, Kru, Diklat Pilot, Pembelian Armada"
+                          >
+                            <Building className="w-3.5 h-3.5 text-cyan-300" />
+                            <span>{language === 'id' ? 'Pipeline Bangun & Diklat (6 Tahap)' : 'Build & Train Pipeline (6 Steps)'}</span>
+                          </button>
                         )}
-                      >
-                        <Unlock className="w-3.5 h-3.5" />
-                        <span>
-                          {language === 'id' 
-                            ? `Beli Lisensi & Buka Skuadron (${formatCurrency(sq.unlockPrice)})` 
-                            : `Purchase & Commission Squadron (${formatCurrency(sq.unlockPrice)})`}
-                        </span>
-                      </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPurchaseModalSquadron(sq)}
+                          className={cn(
+                            "py-2 px-3 rounded-xl font-mono text-[8.5px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-98",
+                            onOpenCommissioningPipeline ? "shrink-0" : "w-full py-2.5",
+                            canAffordAndUnlock
+                              ? "bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white shadow-amber-600/30"
+                              : "bg-amber-950/40 border border-amber-500/30 text-amber-300/80 hover:bg-amber-900/40"
+                          )}
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>
+                            {language === 'id' 
+                              ? (onOpenCommissioningPipeline ? `Lisensi Cepat (${formatCurrency(sq.unlockPrice)})` : `Beli Lisensi & Buka Skuadron (${formatCurrency(sq.unlockPrice)})`)
+                              : (onOpenCommissioningPipeline ? `Direct License (${formatCurrency(sq.unlockPrice)})` : `Purchase & Commission (${formatCurrency(sq.unlockPrice)})`)}
+                          </span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

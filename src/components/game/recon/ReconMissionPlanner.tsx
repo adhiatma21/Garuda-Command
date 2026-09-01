@@ -41,6 +41,8 @@ interface ReconMissionPlannerProps {
   onSetSurveyPoints: (points: Waypoint[] | ((prev: Waypoint[]) => Waypoint[])) => void;
   onStartReconFlight: () => void;
   isReconAirborne: boolean;
+  isPickingReconSurvey?: boolean;
+  setIsPickingReconSurvey?: (v: boolean) => void;
 }
 
 const PRESET_SURVEY_ROUTES = [
@@ -93,7 +95,9 @@ export const ReconMissionPlanner: React.FC<ReconMissionPlannerProps> = ({
   surveyPoints,
   onSetSurveyPoints,
   onStartReconFlight,
-  isReconAirborne
+  isReconAirborne,
+  isPickingReconSurvey = false,
+  setIsPickingReconSurvey
 }) => {
   const [depSearch, setDepSearch] = useState('');
   const [arrSearch, setArrSearch] = useState('');
@@ -335,6 +339,27 @@ export const ReconMissionPlanner: React.FC<ReconMissionPlannerProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Quick Map Click Placement Mode Toggle */}
+        {setIsPickingReconSurvey && (
+          <button
+            type="button"
+            onClick={() => setIsPickingReconSurvey(!isPickingReconSurvey)}
+            className={cn(
+              "w-full py-2.5 px-3 rounded-xl border text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md",
+              isPickingReconSurvey
+                ? "bg-cyan-500 text-black border-cyan-300 ring-2 ring-cyan-400/50 animate-pulse font-mono"
+                : "bg-cyan-950/40 text-cyan-300 border-cyan-500/40 hover:bg-cyan-900/50"
+            )}
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+            <span>
+              {isPickingReconSurvey
+                ? (language === 'id' ? '📍 MODE KLIK PETA AKTIF (KLIK PETA UNTUK MENAMBAH TITIK)' : '📍 MAP CLICK MODE ACTIVE (CLICK MAP TO ADD)')
+                : (language === 'id' ? '📍 Mode Tempatkan Titik di Peta (Klik Peta)' : '📍 Place Points on Map (Map Click Mode)')}
+            </span>
+          </button>
+        )}
 
         {/* Manual Coordinates Input */}
         <div className="p-3 bg-white/5 border border-white/5 rounded-xl space-y-2">

@@ -89,9 +89,9 @@ export const FinanceMetricDetailModal: React.FC<FinanceMetricDetailModalProps> =
   const baseOverhead = totalOutflow > totalSquadronExpenses ? totalOutflow - totalSquadronExpenses : 3000000000;
 
   const METRIC_TABS: { id: MetricType; labelId: string; labelEn: string; icon: any; color: string }[] = [
-    { id: 'cash', labelId: 'Kas Aktif LANUD', labelEn: 'Active Treasury', icon: DollarSign, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
+    { id: 'cash', labelId: 'Kas Aktif Airbase', labelEn: 'Active Treasury', icon: DollarSign, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
     { id: 'income', labelId: 'Pemasukan DIPA', labelEn: 'DIPA Revenue', icon: ArrowUpRight, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
-    { id: 'expense', labelId: 'Pengeluaran LANUD', labelEn: 'Expenditures', icon: ArrowDownRight, color: 'text-red-400 bg-red-500/10 border-red-500/30' },
+    { id: 'expense', labelId: 'Pengeluaran Airbase', labelEn: 'Expenditures', icon: ArrowDownRight, color: 'text-red-400 bg-red-500/10 border-red-500/30' },
     { id: 'net_cash', labelId: 'Arus Kas Bersih', labelEn: 'Net Cashflow', icon: TrendingUp, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
     { id: 'health', labelId: 'Kesehatan Fiskal', labelEn: 'Fiscal Health', icon: ShieldCheck, color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30' }
   ];
@@ -113,7 +113,7 @@ export const FinanceMetricDetailModal: React.FC<FinanceMetricDetailModalProps> =
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono font-bold tracking-widest text-cyan-400 uppercase">
-                  {language === 'id' ? 'AUDIT & TRANSPARANSI KEUANGAN LANUD' : 'AIRBASE FISCAL AUDIT & LEDGER'}
+                  {language === 'id' ? 'AUDIT & TRANSPARANSI AIRBASE FINANCE' : 'AIRBASE FISCAL AUDIT & LEDGER'}
                 </span>
                 <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono font-bold border border-blue-400/30">
                   {profile.lanudIcao}

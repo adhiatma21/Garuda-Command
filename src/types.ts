@@ -26,6 +26,15 @@ export interface Position {
   lng: number;
 }
 
+export interface PlannerWaypoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  altitude: number; // in feet
+  speed?: number; // in knots
+}
+
 export interface Waypoint {
   id: string;
   name: string;
@@ -141,6 +150,94 @@ export interface AircraftGenerationUpgrade {
     gLimits: string;
   };
   keyFeatures: string[];
+}
+
+export interface IndividualPilot {
+  id: string;
+  name: string;
+  callsign: string;
+  rank: string;
+  nrp: string; // Nomor Registrasi Prajurit
+  role: 'PIC' | 'WSO' | 'WINGMAN_1' | 'WINGMAN_2' | 'FLIGHT_LEAD' | string;
+  flightHours: number;
+  rating: number; // 1 to 5 stars or score 70-100
+  specialization: 'BVR Air Superiority' | 'Precision Strike CAS' | 'Tactical Intercept' | 'Electronic Warfare' | 'Night Ops' | 'Dogfight Ace' | string;
+  status: 'READY' | 'IN_TRAINING' | 'TRAINING' | 'FATIGUED' | 'RESTING' | 'SORTIE';
+  stamina: number; // 0-100
+  gTolerance: number; // e.g. 9.0
+  missionCount: number;
+  medals: string[];
+  avatarIcon?: string;
+  assignedAircraftTail?: string;
+  trainingUntil?: number;
+}
+
+export interface IndividualCrewMember {
+  id: string;
+  name: string;
+  nrp: string;
+  department: 'groundCrew' | 'technicians' | 'fuelCrew' | 'electricCrew' | string;
+  division?: string;
+  roleTitle: string;
+  rank: string;
+  rating: number; // 1 to 5 stars
+  experienceLevel: number; // 1-5
+  specialization: string;
+  efficiencyScore: number; // 0-100%
+  status: 'ACTIVE' | 'IN_TRAINING' | 'TRAINING' | 'ON_DUTY';
+  tasksCompleted: number;
+  certifications: string[];
+  trainingUntil?: number;
+}
+
+export interface TrainingCourse {
+  id: string;
+  targetType: 'pilot' | 'ground' | 'technician' | 'fuel' | 'electric' | string;
+  titleId?: string;
+  titleEn?: string;
+  nameId?: string;
+  nameEn?: string;
+  descriptionId: string;
+  descriptionEn: string;
+  durationSeconds: number;
+  cost: number;
+  statBoost: {
+    ratingGain: number;
+    specializationBadge?: string;
+    efficiencyBonus?: number;
+    description: string;
+  };
+  requiredRank?: string;
+}
+
+export interface PendingDeliveryItem {
+  id: string;
+  squadronId: string;
+  type: 'AIRCRAFT' | 'HANGAR_UPGRADE' | 'APRON_UPGRADE' | 'CREW_RECRUITMENT' | 'TRAINING' | string;
+  itemId?: string;
+  titleId: string;
+  titleEn: string;
+  subtitle?: string;
+  subtitleId?: string;
+  subtitleEn?: string;
+  totalDurationSeconds: number;
+  startTime: number;
+  finishTime: number;
+  cost?: number;
+  status?: 'PROCESSING' | 'COMPLETED' | string;
+  iconType?: 'plane' | 'building' | 'users' | 'graduation' | string;
+  data: any;
+}
+
+export interface SquadronCommissioningPipeline {
+  squadronId: string;
+  step: number; // 1: Charter/License, 2: Hangar, 3: Apron, 4: Crew Roster, 5: Pilot Academy, 6: First Aircraft Ferry
+  charterPaid: boolean;
+  hangarBuilt: boolean;
+  apronBuilt: boolean;
+  crewRecruited: boolean;
+  pilotTrained: boolean;
+  aircraftDelivered: boolean;
 }
 
 export interface CrewDepartment {

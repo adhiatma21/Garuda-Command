@@ -50,7 +50,7 @@ export const FinanceReportModal: React.FC<FinanceReportModalProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  {language === 'id' ? 'Laporan Pertanggungjawaban Keuangan LANUD' : 'Official Airbase Financial Balance Statement'}
+                  {language === 'id' ? 'Laporan Pertanggungjawaban Keuangan Airbase (LPJ Airbase Finance)' : 'Official Airbase Financial Balance Statement'}
                 </h3>
                 <p className="text-[10px] text-amber-400/70 font-mono">
                   DOKUMEN RESMI TENTARA NASIONAL INDONESIA ANGKATAN UDARA • RAHASIA & TERBATAS

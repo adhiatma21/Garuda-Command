@@ -56,7 +56,8 @@ import {
   EscortStage,
   ReconState,
   ReconIntelTarget,
-  ReconFlightData
+  ReconFlightData,
+  PlannerWaypoint
 } from './types';
 import { getDistance, getBearing, cn, calculateFuelPlan } from './lib/utils';
 import { MILITARY_AIRPORTS, MilitaryAirport } from './airports';
@@ -181,6 +182,10 @@ export default function App() {
   const [zoomInTrigger, setZoomInTrigger] = useState(0);
   const [zoomOutTrigger, setZoomOutTrigger] = useState(0);
   const [isPickingTankerRV, setIsPickingTankerRV] = useState(false);
+  const [isManualWaypointMode, setIsManualWaypointMode] = useState(false);
+  const [isPickingReconSurvey, setIsPickingReconSurvey] = useState(false);
+  const [isPickingVvipRV, setIsPickingVvipRV] = useState(false);
+  const [plannerWaypoints, setPlannerWaypoints] = useState<PlannerWaypoint[]>([]);
   
   // VVIP Escort States
   const [vvipTargetAircraft, setVvipTargetAircraft] = useState<Aircraft>(AIRCRAFT_PRESETS.find(a => a.id === 'indonesia-one') || AIRCRAFT_PRESETS[0]);
@@ -2034,10 +2039,11 @@ export default function App() {
   }, []);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
-    if (appPhase !== 'main') return;
+    // Guard: Only process map clicks when in main phase and in flight tab
+    if (appPhase !== 'main' || activeTab !== 'flight') return;
 
+    // 1. Tanker Rendezvous Selection Mode
     if (isPickingTankerRV) {
-      // Create Air Refueling Rendezvous Waypoint
       const tankerWp: Waypoint = {
         id: 'tanker-rv-' + Date.now(),
         name: language === 'id' ? 'TITIK RENDEZVOUS TANKER (AAR)' : 'TANKER RV ORBIT (AAR)',
@@ -2068,31 +2074,212 @@ export default function App() {
       setIsPickingTankerRV(false);
       setShowRefuelOptions(false);
       setIsFuelValid(true);
+      speak(
+        language === 'id'
+          ? `Titik orbit pengisian bahan bakar udara (AAR) ditetapkan pada koordinat ${lat.toFixed(2)}, ${lng.toFixed(2)}.`
+          : `Air-to-air refuel orbit point established at ${lat.toFixed(2)}, ${lng.toFixed(2)}.`
+      );
       return;
     }
-    
-    const wp: Waypoint = {
-      id: crypto.randomUUID(),
-      name: `WP ${waypoints.length + 1}`,
-      lat,
-      lng,
-      reached: false,
-      type: 'waypoint',
-      planAltitude: targetAltitude,
-      planSpeed: targetSpeed
-    };
 
-    setWaypoints(prev => {
-      const arrIdx = prev.findIndex(w => w.id.startsWith('arr-'));
-      let newList;
-      if (arrIdx !== -1) {
-        newList = [...prev.slice(0, arrIdx), wp, ...prev.slice(arrIdx)];
-      } else {
-        newList = [...prev, wp];
+    // 2. VVIP Escort Rendezvous Selection Mode
+    if (isPickingVvipRV) {
+      const newRV: Waypoint = {
+        id: 'vvip-rv-' + Date.now(),
+        name: language === 'id' ? `TITIK RV VVIP (${lat.toFixed(2)}, ${lng.toFixed(2)})` : `VVIP RV POINT (${lat.toFixed(2)}, ${lng.toFixed(2)})`,
+        lat: Number(lat.toFixed(4)),
+        lng: Number(lng.toFixed(4)),
+        reached: false,
+        type: 'waypoint',
+        planAltitude: 30000,
+        planSpeed: selectedAircraft.cruiseSpeed
+      };
+      setRendezvousPoint(newRV);
+      setRendezvousLat(lat.toFixed(4));
+      setRendezvousLng(lng.toFixed(4));
+      setIsPickingVvipRV(false);
+      speak(
+        language === 'id'
+          ? `Titik Rendezvous pengawalan VVIP ditetapkan pada koordinat ${lat.toFixed(2)}, ${lng.toFixed(2)}.`
+          : `VVIP Escort rendezvous point established at ${lat.toFixed(2)}, ${lng.toFixed(2)}.`
+      );
+      return;
+    }
+
+    // 3. Recon Survey Sector Selection Mode
+    if (isPickingReconSurvey) {
+      const surveyWp: Waypoint = {
+        id: 'survey-wp-' + Date.now(),
+        name: `SEKTOR-INTEL ${reconSurveyPoints.length + 1}`,
+        lat: Number(lat.toFixed(4)),
+        lng: Number(lng.toFixed(4)),
+        reached: false,
+        type: 'waypoint',
+        planAltitude: 28000,
+        planSpeed: 140
+      };
+      setReconSurveyPoints(prev => [...prev, surveyWp]);
+      speak(
+        language === 'id'
+          ? `Sektor pengintaian ${reconSurveyPoints.length + 1} ditambahkan pada peta.`
+          : `Reconnaissance sector ${reconSurveyPoints.length + 1} added to flight plan.`
+      );
+      return;
+    }
+
+    // 4. Manual Waypoint Mode (explicitly toggled on by player inside mission planner)
+    if (isManualWaypointMode) {
+      if (missionType === 'General') {
+        const newPwp: PlannerWaypoint = {
+          id: 'pwp-' + Date.now(),
+          name: `WP-${plannerWaypoints.length + 1}`,
+          lat: Number(lat.toFixed(4)),
+          lng: Number(lng.toFixed(4)),
+          altitude: targetAltitude || 25000,
+          speed: targetSpeed || selectedAircraft.cruiseSpeed
+        };
+        const updatedPwp = [...plannerWaypoints, newPwp];
+        setPlannerWaypoints(updatedPwp);
+
+        // Update full route
+        const wps: Waypoint[] = [];
+        if (departureAirport) {
+          wps.push({
+            id: 'dep-' + departureAirport.icao,
+            name: `${departureAirport.icao} - ${departureAirport.name}`,
+            lat: departureAirport.lat,
+            lng: departureAirport.lng,
+            reached: false,
+            type: 'airport',
+            planAltitude: 0,
+            planSpeed: 0
+          });
+        }
+        updatedPwp.forEach(wp => {
+          wps.push({
+            id: wp.id,
+            name: wp.name,
+            lat: wp.lat,
+            lng: wp.lng,
+            reached: false,
+            type: 'waypoint',
+            planAltitude: wp.altitude,
+            planSpeed: wp.speed
+          });
+        });
+        if (arrivalAirport && (arrivalAirport.icao !== departureAirport?.icao || updatedPwp.length > 0)) {
+          wps.push({
+            id: 'arr-' + arrivalAirport.icao,
+            name: `${arrivalAirport.icao} - ${arrivalAirport.name}`,
+            lat: arrivalAirport.lat,
+            lng: arrivalAirport.lng,
+            reached: false,
+            type: 'airport',
+            planAltitude: 0,
+            planSpeed: 0
+          });
+        }
+        const planned = calculateFuelPlan(wps, initialFuel, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
+        setWaypoints(planned);
+        return;
       }
-      return calculateFuelPlan(newList, initialFuel * fuelCapacityMultiplier, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
-    });
-  }, [appPhase, isPickingTankerRV, language, waypoints.length, targetAltitude, targetSpeed, initialFuel, fuelCapacityMultiplier, selectedAircraft]);
+
+      if (missionType === 'Patrol') {
+        const customWp: Waypoint = {
+          id: 'patrol-map-' + Date.now(),
+          name: `PATROL-WP-0${waypoints.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-')).length + 1}`,
+          lat: Number(lat.toFixed(4)),
+          lng: Number(lng.toFixed(4)),
+          reached: false,
+          type: 'waypoint',
+          planAltitude: targetAltitude || 25000,
+          planSpeed: selectedAircraft.cruiseSpeed
+        };
+
+        setWaypoints(prev => {
+          const dep = prev.find(w => w.id.startsWith('dep-')) || (departureAirport ? {
+            id: 'dep-' + departureAirport.icao,
+            name: departureAirport.icao + ' - ' + departureAirport.name,
+            lat: departureAirport.lat,
+            lng: departureAirport.lng,
+            reached: false,
+            type: 'airport' as const,
+            planAltitude: 0,
+            planSpeed: 0
+          } : null);
+
+          const midPoints = prev.filter(w => !w.id.startsWith('dep-') && !w.id.startsWith('arr-'));
+          const arr = prev.find(w => w.id.startsWith('arr-')) || (departureAirport ? {
+            id: 'arr-' + departureAirport.icao,
+            name: departureAirport.icao + ' - ' + departureAirport.name,
+            lat: departureAirport.lat,
+            lng: departureAirport.lng,
+            reached: false,
+            type: 'airport' as const,
+            planAltitude: 0,
+            planSpeed: 0
+          } : null);
+
+          const combined = [
+            ...(dep ? [dep] : []),
+            ...midPoints,
+            customWp,
+            ...(arr ? [arr] : [])
+          ];
+
+          return calculateFuelPlan(combined, initialFuel, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
+        });
+        return;
+      }
+
+      // Default fallback when manual mode is explicitly on
+      const wp: Waypoint = {
+        id: crypto.randomUUID(),
+        name: `WP ${waypoints.length + 1}`,
+        lat: Number(lat.toFixed(4)),
+        lng: Number(lng.toFixed(4)),
+        reached: false,
+        type: 'waypoint',
+        planAltitude: targetAltitude,
+        planSpeed: targetSpeed
+      };
+
+      setWaypoints(prev => {
+        const arrIdx = prev.findIndex(w => w.id.startsWith('arr-'));
+        let newList;
+        if (arrIdx !== -1) {
+          newList = [...prev.slice(0, arrIdx), wp, ...prev.slice(arrIdx)];
+        } else {
+          newList = [...prev, wp];
+        }
+        return calculateFuelPlan(newList, initialFuel * fuelCapacityMultiplier, selectedAircraft.burnRate, selectedAircraft.cruiseSpeed);
+      });
+      return;
+    }
+
+    // 5. Outside of explicit mission placement modes: DO NOTHING.
+    // Accidental clicks on the radar map outside active mission placement mode will NOT add any waypoints.
+  }, [
+    appPhase,
+    activeTab,
+    isPickingTankerRV,
+    isPickingVvipRV,
+    isPickingReconSurvey,
+    isManualWaypointMode,
+    missionType,
+    language,
+    speak,
+    reconSurveyPoints.length,
+    plannerWaypoints,
+    departureAirport,
+    arrivalAirport,
+    targetAltitude,
+    targetSpeed,
+    selectedAircraft,
+    initialFuel,
+    fuelCapacityMultiplier,
+    waypoints
+  ]);
 
   useEffect(() => {
     if (missionType === 'Patrol') {
@@ -2206,7 +2393,7 @@ export default function App() {
           
           <NavIcon active={activeTab === 'flight'} onClick={() => setActiveTab('flight')} icon={<LayoutDashboard className="w-5 h-5" />} label={language === 'id' ? 'Penerbangan' : 'Flight'} />
           <NavIcon active={activeTab === 'squadron'} onClick={() => setActiveTab('squadron')} icon={<Shield className="w-5 h-5" />} label={language === 'id' ? 'Skuadron' : 'Squadron'} />
-          <NavIcon active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} icon={<Landmark className="w-5 h-5 text-amber-400" />} label={language === 'id' ? 'Keuangan LANUD' : 'LANUD Finance'} />
+          <NavIcon active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} icon={<Landmark className="w-5 h-5 text-amber-400" />} label="Airbase Finance" />
           
           <div className="mt-auto flex flex-col gap-4">
             <NavIcon active={false} onClick={() => setShowLogoutModal(true)} icon={<LogOut className="w-5 h-5 text-red-400 hover:text-red-300" />} label={language === 'id' ? 'Keluar / Logout' : 'Logout'} />
@@ -2244,10 +2431,10 @@ export default function App() {
               <button 
                 onClick={() => setActiveTab('finance')}
                 className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-[10px] font-mono font-bold transition-all shadow-sm active:scale-95"
-                title={language === 'id' ? 'Buka Manajemen Keuangan LANUD' : 'Open LANUD Financial Management'}
+                title={language === 'id' ? 'Buka Manajemen Keuangan Airbase' : 'Open Airbase Financial Management'}
               >
                 <Coins className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                <span>{language === 'id' ? 'KEUANGAN LANUD' : 'LANUD BUDGET'}</span>
+                <span>AIRBASE FINANCE</span>
               </button>
 
               {/* Language Selector */}
@@ -2467,6 +2654,14 @@ export default function App() {
                       isStrikeCompleted={isStrikeCompleted}
                       simulationSpeed={simulationSpeed}
                       onSetSimulationSpeed={setSimulationSpeed}
+                      isManualWaypointMode={isManualWaypointMode}
+                      setIsManualWaypointMode={setIsManualWaypointMode}
+                      isPickingReconSurvey={isPickingReconSurvey}
+                      setIsPickingReconSurvey={setIsPickingReconSurvey}
+                      isPickingVvipRV={isPickingVvipRV}
+                      setIsPickingVvipRV={setIsPickingVvipRV}
+                      plannerWaypoints={plannerWaypoints}
+                      setPlannerWaypoints={setPlannerWaypoints}
                     />
                   )}
                   {activeTab === 'squadron' && (
@@ -2657,6 +2852,93 @@ export default function App() {
                           className="px-3 py-1.5 bg-black/40 hover:bg-black/60 rounded-lg text-[8px] font-bold text-white transition-all uppercase ml-2 border border-white/20"
                         >
                           {language === 'id' ? 'Batal' : 'Cancel'}
+                        </button>
+                      </motion.div>
+                    </div>
+                  )}
+
+                  {/* Manual Waypoint Mode Notification */}
+                  {isManualWaypointMode && !isSimulating && appPhase === 'main' && (
+                    <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[3000] pointer-events-auto">
+                      <motion.div 
+                        initial={{ y: -20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        className="bg-blue-600/90 backdrop-blur-xl border border-cyan-400/50 px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-4"
+                      >
+                        <div className="p-2 bg-cyan-400/20 rounded-lg">
+                          <Crosshair className="w-5 h-5 text-cyan-300 animate-spin" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-white uppercase tracking-widest leading-tight">
+                            {language === 'id' ? 'MODE PENEMPATAN WAYPOINT AKTIF' : 'MANUAL WAYPOINT PLACEMENT ACTIVE'}
+                          </p>
+                          <p className="text-[8px] text-cyan-200 uppercase leading-tight font-mono">
+                            {language === 'id' ? 'KLIK PADA PETA UNTUK MENAMBAHKAN TITIK RUTE' : 'CLICK ON RADAR MAP TO ADD WAYPOINT'}
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => setIsManualWaypointMode(false)}
+                          className="px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg text-[8.5px] font-bold text-cyan-300 transition-all uppercase ml-2 border border-cyan-400/40"
+                        >
+                          {language === 'id' ? 'Selesai' : 'Done'}
+                        </button>
+                      </motion.div>
+                    </div>
+                  )}
+
+                  {/* VVIP RV Selection Mode Notification */}
+                  {isPickingVvipRV && !isSimulating && appPhase === 'main' && (
+                    <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[3000] pointer-events-auto">
+                      <motion.div 
+                        initial={{ y: -20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        className="bg-amber-600/90 backdrop-blur-xl border border-amber-400/50 px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-4"
+                      >
+                        <div className="p-2 bg-white/20 rounded-lg">
+                          <Crosshair className="w-5 h-5 text-white animate-pulse" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-white uppercase tracking-widest leading-tight">
+                            {language === 'id' ? 'MODE PILIH TITIK RENDEZVOUS VVIP' : 'VVIP RENDEZVOUS SELECTION MODE'}
+                          </p>
+                          <p className="text-[8px] text-amber-200 uppercase leading-tight font-mono">
+                            {language === 'id' ? 'KLIK PADA PETA UNTUK MENETAPKAN TITIK TEMU VVIP' : 'CLICK ON MAP TO SET VVIP INTERCEPT POINT'}
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => setIsPickingVvipRV(false)}
+                          className="px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg text-[8.5px] font-bold text-amber-200 transition-all uppercase ml-2 border border-amber-400/40"
+                        >
+                          {language === 'id' ? 'Batal' : 'Cancel'}
+                        </button>
+                      </motion.div>
+                    </div>
+                  )}
+
+                  {/* Recon Survey Point Selection Mode Notification */}
+                  {isPickingReconSurvey && !isSimulating && appPhase === 'main' && (
+                    <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[3000] pointer-events-auto">
+                      <motion.div 
+                        initial={{ y: -20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        className="bg-purple-600/90 backdrop-blur-xl border border-purple-400/50 px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-4"
+                      >
+                        <div className="p-2 bg-white/20 rounded-lg">
+                          <Crosshair className="w-5 h-5 text-white animate-pulse" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-white uppercase tracking-widest leading-tight">
+                            {language === 'id' ? 'MODE PILIH SEKTOR INTAI / ISR' : 'RECON SURVEY SECTOR SELECTION'}
+                          </p>
+                          <p className="text-[8px] text-purple-200 uppercase leading-tight font-mono">
+                            {language === 'id' ? 'KLIK PADA PETA UNTUK MENAMBAH SEKTOR PENGINTAIAN' : 'CLICK ON MAP TO ADD RECON SURVEY SECTOR'}
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => setIsPickingReconSurvey(false)}
+                          className="px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg text-[8.5px] font-bold text-purple-200 transition-all uppercase ml-2 border border-purple-400/40"
+                        >
+                          {language === 'id' ? 'Selesai' : 'Done'}
                         </button>
                       </motion.div>
                     </div>

@@ -38,10 +38,25 @@ import {
   Layers,
   ChevronDown,
   Building,
-  UserPlus
+  UserPlus,
+  GraduationCap,
+  Sparkle
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { Aircraft, Crew, PlayerProfile, OwnedAircraft, SquadronCrewRoster, FacilityState, AircraftGenerationUpgrade } from '../../../types';
+import { 
+  Aircraft, 
+  Crew, 
+  PlayerProfile, 
+  OwnedAircraft, 
+  SquadronCrewRoster, 
+  FacilityState, 
+  AircraftGenerationUpgrade,
+  IndividualPilot,
+  IndividualCrewMember,
+  TrainingCourse,
+  PendingDeliveryItem,
+  SquadronCommissioningPipeline
+} from '../../../types';
 import { SQUADRON_DATA, AIRCRAFT_PRESETS, PLAYABLE_SQUADRONS, PlayableSquadron, MILITARY_RANKS } from '../../../constants';
 import { MilitaryAirport, MILITARY_AIRPORTS } from '../../../airports';
 import { 
@@ -51,11 +66,21 @@ import {
   AIRCRAFT_PROCUREMENT_CATALOG, 
   generateTailNumber, 
   createDefaultOwnedAircraft, 
-  createDefaultCrewRoster 
+  createDefaultCrewRoster,
+  REAL_CREW_REQUIREMENTS_PER_AIRCRAFT,
+  calculateSquadronCrewCapacity,
+  MILITARY_TRAINING_COURSES,
+  generateDefaultPilotsForSquadron,
+  generateDefaultCrewMembersForSquadron,
+  getRankLevel
 } from '../../../data/squadronState';
 import { SquadronWeaponsView } from './SquadronWeaponsView';
 import { SquadronGenUpgradeView } from './SquadronGenUpgradeView';
 import { SquadronListView } from './SquadronListView';
+import { CrewDetailModal } from './CrewDetailModal';
+import { SquadronTrainingView } from './SquadronTrainingView';
+import { TacticalDeliveryHUD } from './TacticalDeliveryHUD';
+import { SquadronCommissioningPipelineModal } from './SquadronCommissioningPipelineModal';
 
 interface SquadronTabProps {
   language: 'id' | 'en';
@@ -486,6 +511,56 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
   // 8. Service Facility Sub-tabs: 'facilities' | 'gen_upgrade' | 'diagnostics'
   const [serviceSubTab, setServiceSubTab] = useState<'facilities' | 'gen_upgrade' | 'diagnostics'>('facilities');
 
+  // 9. Crew Sub-tabs: 'roster' | 'academy' | 'capacity'
+  const [crewSubTab, setCrewSubTab] = useState<'roster' | 'academy' | 'capacity'>('roster');
+
+  // 10. Selected Dossier Personnel Modal
+  const [selectedDossierPilot, setSelectedDossierPilot] = useState<IndividualPilot | null>(null);
+  const [selectedDossierCrew, setSelectedDossierCrew] = useState<IndividualCrewMember | null>(null);
+
+  // 11. Squadron Commissioning Pipeline Modal for locked squadrons
+  const [commissioningModalSquadron, setCommissioningModalSquadron] = useState<PlayableSquadron | null>(null);
+
+  // 12. Individual Pilots Roster with Star Ratings & Specialty
+  const [individualPilots, setIndividualPilots] = useState<IndividualPilot[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_pilots`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return generateDefaultPilotsForSquadron(
+      squadronData.name,
+      squadronMeta.callsignPrefix,
+      playerProfile?.commanderName || 'Mayor Adhiatma'
+    );
+  });
+
+  // 13. Individual Crew Members Roster with Star Ratings & Specialization
+  const [individualCrewMembers, setIndividualCrewMembers] = useState<IndividualCrewMember[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_crew_members`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return generateDefaultCrewMembersForSquadron(squadronData.name);
+  });
+
+  // 14. Pending Deliveries, Construction, Training Queue
+  const [pendingJobs, setPendingJobs] = useState<PendingDeliveryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_pending_jobs`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+
   // Load squadron state helper
   const handleSelectSquadron = (sq: PlayableSquadron) => {
     setSelectedSquadronId(sq.id);
@@ -495,6 +570,7 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
 
     const key = `ais_sq_state_${sq.id}`;
     const acPreset = AIRCRAFT_PRESETS.find(p => p.id === sq.aircraftId) || selectedAircraft;
+    const sqMeta = SQUADRON_DETAILS[sq.name] || SQUADRON_DETAILS['Skadron Udara 3'];
 
     let b = INITIAL_SQUADRON_BUDGET;
     let fleet: OwnedAircraft[] = [createDefaultOwnedAircraft(acPreset, sq.name)];
@@ -509,6 +585,13 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       conformal: null,
       centerline: 'sniper_xr'
     };
+    let pilots = generateDefaultPilotsForSquadron(
+      sq.name,
+      sqMeta.callsignPrefix,
+      playerProfile?.commanderName || 'Mayor Adhiatma'
+    );
+    let crewMems = generateDefaultCrewMembersForSquadron(sq.name);
+    let jobs: PendingDeliveryItem[] = [];
 
     try {
       const sBudget = localStorage.getItem(`${key}_budget`);
@@ -543,6 +626,24 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         const p = JSON.parse(sHp);
         if (p) hp = p;
       }
+
+      const sPilots = localStorage.getItem(`${key}_pilots`);
+      if (sPilots) {
+        const p = JSON.parse(sPilots);
+        if (Array.isArray(p) && p.length > 0) pilots = p;
+      }
+
+      const sCrewMems = localStorage.getItem(`${key}_crew_members`);
+      if (sCrewMems) {
+        const p = JSON.parse(sCrewMems);
+        if (Array.isArray(p) && p.length > 0) crewMems = p;
+      }
+
+      const sJobs = localStorage.getItem(`${key}_pending_jobs`);
+      if (sJobs) {
+        const p = JSON.parse(sJobs);
+        if (Array.isArray(p)) jobs = p;
+      }
     } catch (e) {}
 
     setBudget(b);
@@ -552,6 +653,9 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     setApronLevelIndex(aLvl);
     setUnlockedWeaponIds(weaps);
     setHardpoints(hp);
+    setIndividualPilots(pilots);
+    setIndividualCrewMembers(crewMems);
+    setPendingJobs(jobs);
     setActiveHealthTail(fleet[0]?.tailNumber || 'TS-1601');
     setViewMode('detail');
 
@@ -679,8 +783,132 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       localStorage.setItem(`${storageKey}_apron_level`, String(apronLevelIndex));
       localStorage.setItem(`${storageKey}_unlocked_weapons`, JSON.stringify(unlockedWeaponIds));
       localStorage.setItem(`${storageKey}_hardpoints`, JSON.stringify(hardpoints));
+      localStorage.setItem(`${storageKey}_pilots`, JSON.stringify(individualPilots));
+      localStorage.setItem(`${storageKey}_crew_members`, JSON.stringify(individualCrewMembers));
+      localStorage.setItem(`${storageKey}_pending_jobs`, JSON.stringify(pendingJobs));
     } catch (e) {}
-  }, [storageKey, budget, ownedFleet, crewRoster, hangarLevelIndex, apronLevelIndex, unlockedWeaponIds, hardpoints]);
+  }, [storageKey, budget, ownedFleet, crewRoster, hangarLevelIndex, apronLevelIndex, unlockedWeaponIds, hardpoints, individualPilots, individualCrewMembers, pendingJobs]);
+
+  // Background processor for Pending Deliveries, Facility Construction, and Personnel Training
+  useEffect(() => {
+    if (pendingJobs.length === 0) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const completed = pendingJobs.filter(job => now >= job.finishTime);
+
+      if (completed.length > 0) {
+        completed.forEach(job => {
+          if (job.type === 'AIRCRAFT' && job.data?.newUnit) {
+            const unit = job.data.newUnit as OwnedAircraft;
+            setOwnedFleet(prev => {
+              if (prev.some(u => u.id === unit.id || u.tailNumber === unit.tailNumber)) return prev;
+              return [...prev, unit];
+            });
+            setActiveHealthTail(unit.tailNumber);
+
+            const notif = language === 'id'
+              ? `PESAWAT TIBA! ${unit.aircraft.name} (${unit.tailNumber}) mendarat di pangkalan dan resmi bergabung dengan skuadron!`
+              : `AIRCRAFT DELIVERED! ${unit.aircraft.name} (${unit.tailNumber}) touched down and joined the squadron!`;
+            setTransactionFeedback(notif);
+
+            if (speak) {
+              speak(
+                language === 'id'
+                  ? `Pemberitahuan Menara ATC: Pesawat tempur ${unit.aircraft.name} nomor ekor ${unit.tailNumber} telah mendarat dengan selamat di pangkalan dan resmi diserahkan ke komandan skadron.`
+                  : `Airbase Notice: Aircraft ${unit.aircraft.name} tail ${unit.tailNumber} ferry flight complete and commissioned.`
+              );
+            }
+          } else if (job.type === 'HANGAR_UPGRADE') {
+            setHangarLevelIndex(prev => prev + 1);
+            const targetLvl = (job.data?.targetLevel || 2);
+            const notif = language === 'id'
+              ? `KONSTRUKSI SELESAI! Hanggar Perawatan Level ${targetLvl} siap digunakan.`
+              : `CONSTRUCTION COMPLETE! Hangar Bay Level ${targetLvl} operational.`;
+            setTransactionFeedback(notif);
+
+            if (speak) {
+              speak(
+                language === 'id'
+                  ? `Pemberitahuan Pangkalan: Pembangunan fasilitas hanggar perawatan skuadron telah selesai dikerjakan.`
+                  : `Airbase Notice: Hangar bay facility expansion completed.`
+              );
+            }
+          } else if (job.type === 'APRON_UPGRADE') {
+            setApronLevelIndex(prev => prev + 1);
+            const targetLvl = (job.data?.targetLevel || 2);
+            const notif = language === 'id'
+              ? `PERLUASAN SELESAI! Apron Hardstand Level ${targetLvl} siap menampung armada.`
+              : `EXPANSION COMPLETE! Apron Hardstand Level ${targetLvl} operational.`;
+            setTransactionFeedback(notif);
+
+            if (speak) {
+              speak(
+                language === 'id'
+                  ? `Pemberitahuan Pangkalan: Pekerjaan pengaspalan dan perluasan apron tarmac pesawat tempur selesai.`
+                  : `Airbase Notice: Apron tarmac hardstand expansion completed.`
+              );
+            }
+          } else if (job.type === 'CREW_RECRUITMENT' && job.data?.departmentKey) {
+            const deptKey = job.data.departmentKey as 'groundCrew' | 'technicians' | 'fuelCrew' | 'electricCrew';
+            setCrewRoster(prev => ({
+              ...prev,
+              [deptKey]: {
+                ...prev[deptKey],
+                count: prev[deptKey].count + 2,
+                level: Math.min(prev[deptKey].level + 1, 5)
+              }
+            }));
+            const notif = language === 'id'
+              ? `REKRUTMEN SELESAI! Personil baru telah tiba dan ditugaskan ke skuadron.`
+              : `RECRUITMENT COMPLETE! Support personnel deployed to squadron.`;
+            setTransactionFeedback(notif);
+          } else if (job.type === 'TRAINING' && job.data) {
+            const { targetId, isPilot, statBoost } = job.data;
+            if (isPilot) {
+              setIndividualPilots(prev => prev.map(p => {
+                if (p.id !== targetId) return p;
+                return {
+                  ...p,
+                  rating: Math.min(5.0, Number((p.rating + (statBoost?.ratingGain || 0.4)).toFixed(1))),
+                  specialization: statBoost?.specializationBadge || p.specialization,
+                  status: 'READY'
+                };
+              }));
+            } else {
+              setIndividualCrewMembers(prev => prev.map(c => {
+                if (c.id !== targetId) return c;
+                return {
+                  ...c,
+                  rating: Math.min(5.0, Number((c.rating + (statBoost?.ratingGain || 0.4)).toFixed(1))),
+                  efficiencyScore: Math.min(100, c.efficiencyScore + (statBoost?.efficiencyBonus || 15)),
+                  status: 'ACTIVE'
+                };
+              }));
+            }
+
+            const notif = language === 'id'
+              ? `PELATIHAN DIKLAT SELESAI! Personil berhasil lulus dengan peningkatan rating kemahiran!`
+              : `TRAINING COMPLETE! Personnel graduated with enhanced performance ratings!`;
+            setTransactionFeedback(notif);
+
+            if (speak) {
+              speak(
+                language === 'id'
+                  ? `Personil skuadron telah menyelesaikan program pelatihan militer dan kembali ke pangkalan dengan kualifikasi baru.`
+                  : `Personnel successfully graduated from advanced military training.`
+              );
+            }
+          }
+        });
+
+        // Remove finished jobs from list
+        setPendingJobs(prev => prev.filter(j => now < j.finishTime));
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [pendingJobs, language, speak]);
 
   // Synchronize activeHealthTail if fleet changes
   useEffect(() => {
@@ -761,17 +989,24 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     }
   };
 
-  // 1. BUY AIRCRAFT (Includes full crew and tail number registration)
+  // 1. BUY AIRCRAFT (Includes strict facility capacity enforcement & delivery ferry time)
   const handleBuyAircraft = (catalogItem: typeof AIRCRAFT_PROCUREMENT_CATALOG[0]) => {
     const preset = AIRCRAFT_PRESETS.find(p => p.id === catalogItem.presetId);
     if (!preset) return;
 
-    // Check capacity: Hangar or Apron limit
-    const maxCapacity = Math.max(currentHangar.capacity, currentApron.capacity);
-    if (ownedFleet.length >= maxCapacity) {
+    // Check capacity: MUST NOT exceed the lower of Hangar or Apron capacity
+    const minFacilityCapacity = Math.min(currentHangar.capacity, currentApron.capacity);
+    if (ownedFleet.length >= minFacilityCapacity) {
+      const needsHangar = currentHangar.capacity <= ownedFleet.length;
+      const needsApron = currentApron.capacity <= ownedFleet.length;
+      const bottleneck = needsHangar && needsApron 
+        ? 'Hanggar dan Apron' 
+        : needsHangar ? 'Hanggar Perawatan' : 'Apron Hardstand';
+
       const msg = language === 'id'
-        ? `Kapasitas Hanggar & Apron Penuh (${ownedFleet.length}/${maxCapacity} Pesawat). Silakan upgrade fasilitas Hanggar / Apron terlebih dahulu!`
-        : `Hangar & Apron Capacity Full (${ownedFleet.length}/${maxCapacity} Aircraft). Please upgrade Hangar / Apron facilities first!`;
+        ? `KAPASITAS PANGKALAN PENUH (${ownedFleet.length}/${minFacilityCapacity} Pesawat)! Kapasitas saat ini: Hanggar (${currentHangar.capacity}) | Apron (${currentApron.capacity}). Anda WAJIB melakukan upgrade fasilitas ${bottleneck} terlebih dahulu sebelum membeli pesawat baru!`
+        : `AIRBASE CAPACITY FULL (${ownedFleet.length}/${minFacilityCapacity} Aircraft)! Current: Hangar (${currentHangar.capacity}) | Apron (${currentApron.capacity}). You MUST upgrade ${bottleneck} facilities before procuring new aircraft!`;
+      
       setTransactionFeedback(msg);
       if (speak) speak(msg);
       return;
@@ -788,10 +1023,10 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       return;
     }
 
-    // Process purchase
+    // Deduct cost immediately from treasury
     setBudget(prev => prev - catalogItem.price);
 
-    const newTailNumber = generateTailNumber(preset, ownedFleet.length, currentSquadronName);
+    const newTailNumber = generateTailNumber(preset, ownedFleet.length + pendingJobs.filter(j => j.type === 'AIRCRAFT').length, currentSquadronName);
     const newOwnedUnit: OwnedAircraft = {
       id: `owned-${preset.id}-${newTailNumber}-${Date.now()}`,
       tailNumber: newTailNumber,
@@ -814,7 +1049,29 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       purchasedAt: Date.now()
     };
 
-    setOwnedFleet(prev => [...prev, newOwnedUnit]);
+    // Queue in delivery job with ferry flight time (20s)
+    const deliverySeconds = 20;
+    const newJob: PendingDeliveryItem = {
+      id: `job-aircraft-${preset.id}-${Date.now()}`,
+      squadronId: selectedSquadronId,
+      type: 'AIRCRAFT',
+      titleId: `Pengadaan Pesawat ${preset.name}`,
+      titleEn: `Aircraft Delivery ${preset.name}`,
+      subtitleId: `Ferry Flight Menuju ${squadronData.location} (${newTailNumber})`,
+      subtitleEn: `Ferry Flight En-Route to ${squadronData.location} (${newTailNumber})`,
+      startTime: Date.now(),
+      finishTime: Date.now() + deliverySeconds * 1000,
+      totalDurationSeconds: deliverySeconds,
+      cost: catalogItem.price,
+      status: 'PROCESSING',
+      iconType: 'plane',
+      data: {
+        newUnit: newOwnedUnit,
+        catalogItem
+      }
+    };
+
+    setPendingJobs(prev => [...prev, newJob]);
 
     // Automatically expand crew allocation by included package count
     const extraGround = 2;
@@ -847,23 +1104,21 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     }));
 
     const successMsg = language === 'id'
-      ? `Pembelian ${preset.name} (${newTailNumber}) BERHASIL! Paket lengkap +${catalogItem.includedCrewCount} Personil Kru telah ditugaskan ke skuadron.`
-      : `Procurement of ${preset.name} (${newTailNumber}) SUCCESSFUL! Package with +${catalogItem.includedCrewCount} Crew onboarded to squadron.`;
+      ? `PESANAN PENGADAAN DISETUJUI! Pesawat ${preset.name} (${newTailNumber}) sedang dalam penerbangan penyerahan (Ferry Flight) menuju pangkalan (~${deliverySeconds} detik).`
+      : `PROCUREMENT ORDER APPROVED! Aircraft ${preset.name} (${newTailNumber}) ferry flight en-route (~${deliverySeconds}s).`;
 
     setTransactionFeedback(successMsg);
-    setFleetSubTab('my_fleet');
-    setActiveHealthTail(newTailNumber);
 
     if (speak) {
       speak(
         language === 'id'
-          ? `Pembelian pesawat tempur ${preset.name} nomor ekor ${newTailNumber} berhasil. Seluruh personil kru darat pendukung telah tiba di pangkalan.`
-          : `Procurement of aircraft ${preset.name} tail ${newTailNumber} completed with dedicated support aircrews and ground teams.`
+          ? `Otorisasi pengadaan pesawat tempur ${preset.name} disetujui. Pesawat sedang dalam proses penerbangan ferry flight menuju pangkalan.`
+          : `Procurement order for ${preset.name} approved. Ferry flight initiated en-route to base.`
       );
     }
   };
 
-  // 2. UPGRADE CREW DEPARTMENT
+  // 2. UPGRADE CREW DEPARTMENT (With training/recruitment processing time)
   const handleUpgradeCrew = (departmentKey: 'groundCrew' | 'technicians' | 'fuelCrew' | 'electricCrew') => {
     const dept = crewRoster[departmentKey];
     if (budget < dept.costPerUpgrade) {
@@ -876,31 +1131,44 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
 
     setBudget(prev => prev - dept.costPerUpgrade);
 
-    setCrewRoster(prev => ({
-      ...prev,
-      [departmentKey]: {
-        ...prev[departmentKey],
-        count: prev[departmentKey].count + 2,
-        level: Math.min(prev[departmentKey].level + 1, 5)
+    const recruitSeconds = 10;
+    const newJob: PendingDeliveryItem = {
+      id: `job-crew-${departmentKey}-${Date.now()}`,
+      squadronId: selectedSquadronId,
+      type: 'CREW_RECRUITMENT',
+      titleId: `Rekrutmen ${dept.nameId}`,
+      titleEn: `Recruitment ${dept.nameEn}`,
+      subtitleId: `Penugasan +2 Personil & Kualifikasi Baru`,
+      subtitleEn: `Deployment of +2 Personnel & New Qualifications`,
+      startTime: Date.now(),
+      finishTime: Date.now() + recruitSeconds * 1000,
+      totalDurationSeconds: recruitSeconds,
+      cost: dept.costPerUpgrade,
+      status: 'PROCESSING',
+      iconType: 'user',
+      data: {
+        departmentKey
       }
-    }));
+    };
+
+    setPendingJobs(prev => [...prev, newJob]);
 
     const msg = language === 'id'
-      ? `Penambahan +2 Personil & Upgrade Sertifikasi ${dept.nameId} BERHASIL!`
-      : `Addition of +2 Personnel & Certification Upgrade for ${dept.nameEn} SUCCESSFUL!`;
+      ? `PROSES REKRUTMEN DIMULAI: +2 Personil ${dept.nameId} sedang dalam proses mobilisasi (~${recruitSeconds} detik).`
+      : `RECRUITMENT INITIATED: +2 Personnel for ${dept.nameEn} en-route (~${recruitSeconds}s).`;
 
     setTransactionFeedback(msg);
 
     if (speak) {
       speak(
         language === 'id'
-          ? `Kru ${dept.nameId} berhasil ditambah dua personil. Kapabilitas dukungan pangkalan meningkat.`
-          : `Crew ${dept.nameEn} upgraded with additional personnel and enhanced qualifications.`
+          ? `Permintaan penambahan personil ${dept.nameId} disetujui. Tim sedang dalam proses administrasi dan penempatan ke pangkalan.`
+          : `Crew reinforcement for ${dept.nameEn} approved and processing.`
       );
     }
   };
 
-  // 3. UPGRADE HANGAR FACILITY
+  // 3. UPGRADE HANGAR FACILITY (With Construction Time)
   const handleUpgradeHangar = () => {
     if (!nextHangar) return;
     if (budget < currentHangar.upgradeCost) {
@@ -912,24 +1180,46 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     }
 
     setBudget(prev => prev - currentHangar.upgradeCost);
-    setHangarLevelIndex(prev => prev + 1);
+
+    const constructionSeconds = 15;
+    const newJob: PendingDeliveryItem = {
+      id: `job-hangar-${nextHangar.level}-${Date.now()}`,
+      squadronId: selectedSquadronId,
+      type: 'HANGAR_UPGRADE',
+      titleId: `Pembangunan ${nextHangar.titleId}`,
+      titleEn: `Construction of ${nextHangar.titleEn}`,
+      subtitleId: `Peningkatan Kapasitas Menjadi ${nextHangar.capacity} Pesawat Tempur`,
+      subtitleEn: `Expanding Capacity to ${nextHangar.capacity} Combat Aircraft`,
+      startTime: Date.now(),
+      finishTime: Date.now() + constructionSeconds * 1000,
+      totalDurationSeconds: constructionSeconds,
+      cost: currentHangar.upgradeCost,
+      status: 'PROCESSING',
+      iconType: 'building',
+      data: {
+        targetLevel: nextHangar.level,
+        capacity: nextHangar.capacity
+      }
+    };
+
+    setPendingJobs(prev => [...prev, newJob]);
 
     const msg = language === 'id'
-      ? `UPGRADE HANGGAR BERHASIL! Kapasitas bertambah menjadi ${nextHangar.capacity} Pesawat Tempur.`
-      : `HANGAR UPGRADE COMPLETE! Capacity expanded to ${nextHangar.capacity} Combat Aircraft.`;
+      ? `PROSES KONSTRUKSI DIMULAI! Pembangunan Hanggar Level ${nextHangar.level} sedang berjalan (~${constructionSeconds} detik).`
+      : `CONSTRUCTION STARTED! Hangar Level ${nextHangar.level} upgrade in progress (~${constructionSeconds}s).`;
 
     setTransactionFeedback(msg);
 
     if (speak) {
       speak(
         language === 'id'
-          ? `Fasilitas hanggar skuadron berhasil diperluas. Kapasitas kini mampu menampung ${nextHangar.capacity} pesawat tempur.`
-          : `Squadron hangar bay successfully expanded to accommodate ${nextHangar.capacity} combat aircraft.`
+          ? `Pekerjaan konstruksi perluasan hanggar perawatan skuadron telah dimulai.`
+          : `Construction for squadron hangar bay expansion has begun.`
       );
     }
   };
 
-  // 4. UPGRADE APRON FACILITY
+  // 4. UPGRADE APRON FACILITY (With Tarmac Construction Time)
   const handleUpgradeApron = () => {
     if (!nextApron) return;
     if (budget < currentApron.upgradeCost) {
@@ -941,24 +1231,129 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
     }
 
     setBudget(prev => prev - currentApron.upgradeCost);
-    setApronLevelIndex(prev => prev + 1);
+
+    const constructionSeconds = 12;
+    const newJob: PendingDeliveryItem = {
+      id: `job-apron-${nextApron.level}-${Date.now()}`,
+      squadronId: selectedSquadronId,
+      type: 'APRON_UPGRADE',
+      titleId: `Perluasan ${nextApron.titleId}`,
+      titleEn: `Expansion of ${nextApron.titleEn}`,
+      subtitleId: `Peningkatan Daya Tampung Hardstand Menjadi ${nextApron.capacity} Pesawat`,
+      subtitleEn: `Expanding Hardstand Capacity to ${nextApron.capacity} Aircraft`,
+      startTime: Date.now(),
+      finishTime: Date.now() + constructionSeconds * 1000,
+      totalDurationSeconds: constructionSeconds,
+      cost: currentApron.upgradeCost,
+      status: 'PROCESSING',
+      iconType: 'building',
+      data: {
+        targetLevel: nextApron.level,
+        capacity: nextApron.capacity
+      }
+    };
+
+    setPendingJobs(prev => [...prev, newJob]);
 
     const msg = language === 'id'
-      ? `PERLUASAN APRON BERHASIL! Kapasitas hardstand bertambah menjadi ${nextApron.capacity} Pesawat Tempur.`
-      : `APRON EXPANSION COMPLETE! Tarmac hardstand capacity expanded to ${nextApron.capacity} Combat Aircraft.`;
+      ? `PROSES PENGASPALAN APRON DIMULAI! Perluasan Apron Level ${nextApron.level} sedang berlangsung (~${constructionSeconds} detik).`
+      : `TARMAC EXPANSION STARTED! Apron Level ${nextApron.level} upgrade in progress (~${constructionSeconds}s).`;
 
     setTransactionFeedback(msg);
 
     if (speak) {
       speak(
         language === 'id'
-          ? `Perluasan apron tarmac berhasil diselesaikan. Daya tampung kini mencapai ${nextApron.capacity} pesawat siap siaga.`
-          : `Apron tarmac facility expansion completed with capacity for ${nextApron.capacity} alert aircraft.`
+          ? `Pekerjaan perkerasan dan perluasan apron tarmac pangkalan telah dimulai.`
+          : `Apron tarmac expansion construction has commenced.`
       );
     }
   };
 
-  // 5. GRANT EXTRA BUDGET (For test and sandbox enjoyment)
+  // 5. START ADVANCED MILITARY TRAINING
+  const handleStartTraining = (candidateId: string, isPilot: boolean, courseId: string) => {
+    const course = MILITARY_TRAINING_COURSES.find(c => c.id === courseId);
+    if (!course) return;
+
+    if (budget < course.cost) {
+      const msg = language === 'id'
+        ? `Anggaran tidak mencukupi untuk kursus ${course.nameId}. Dibutuhkan ${formatCurrency(course.cost)}.`
+        : `Insufficient budget for ${course.nameEn}. Required ${formatCurrency(course.cost)}.`;
+      setTransactionFeedback(msg);
+      return;
+    }
+
+    let candidateName = '';
+    let candidateRank = '';
+
+    if (isPilot) {
+      const pilot = individualPilots.find(p => p.id === candidateId);
+      if (!pilot || pilot.status === 'TRAINING') return;
+      candidateName = pilot.name;
+      candidateRank = pilot.rank;
+      setIndividualPilots(prev => prev.map(p => p.id === candidateId ? { ...p, status: 'TRAINING' } : p));
+    } else {
+      const crewMem = individualCrewMembers.find(c => c.id === candidateId);
+      if (!crewMem || crewMem.status === 'TRAINING') return;
+      candidateName = crewMem.name;
+      candidateRank = crewMem.rank;
+      setIndividualCrewMembers(prev => prev.map(c => c.id === candidateId ? { ...c, status: 'TRAINING' } : c));
+    }
+
+    // Deduct course tuition from budget
+    setBudget(prev => prev - course.cost);
+
+    const newJob: PendingDeliveryItem = {
+      id: `job-train-${course.id}-${candidateId}-${Date.now()}`,
+      squadronId: selectedSquadronId,
+      type: 'TRAINING',
+      titleId: `Diklat: ${course.nameId}`,
+      titleEn: `Training: ${course.nameEn}`,
+      subtitleId: `${candidateRank} ${candidateName} • Wing Pendidikan TNI AU`,
+      subtitleEn: `${candidateRank} ${candidateName} • TNI AU Training Wing`,
+      startTime: Date.now(),
+      finishTime: Date.now() + course.durationSeconds * 1000,
+      totalDurationSeconds: course.durationSeconds,
+      cost: course.cost,
+      status: 'PROCESSING',
+      iconType: 'graduation',
+      data: {
+        targetId: candidateId,
+        isPilot,
+        courseId: course.id,
+        statBoost: course.statBoost
+      }
+    };
+
+    setPendingJobs(prev => [...prev, newJob]);
+
+    const msg = language === 'id'
+      ? `${candidateRank} ${candidateName} resmi diberangkatkan ke Wing Diklat untuk program "${course.nameId}" (~${course.durationSeconds} detik).`
+      : `${candidateRank} ${candidateName} dispatched for "${course.nameEn}" training (~${course.durationSeconds}s).`;
+
+    setTransactionFeedback(msg);
+
+    if (speak) {
+      speak(
+        language === 'id'
+          ? `Personil ${candidateName} telah diberangkatkan ke Wing Pendidikan untuk menjalani kursus pelatihan lanjutan.`
+          : `Personnel ${candidateName} dispatched to training academy.`
+      );
+    }
+  };
+
+  // 6. EXPEDITE / RUSH PENDING JOB
+  const handleExpediteJob = (jobId: string) => {
+    setPendingJobs(prev => prev.map(j => {
+      if (j.id !== jobId) return j;
+      return {
+        ...j,
+        finishTime: Date.now() - 100 // Mark as finished immediately
+      };
+    }));
+  };
+
+  // 7. GRANT EXTRA BUDGET (For test and sandbox enjoyment)
   const handleRequestBudgetGrant = () => {
     const grantAmount = 500000000; // Rp 500.000.000
     setBudget(prev => prev + grantAmount);
@@ -1111,6 +1506,7 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
             onSelectSquadron={handleSelectSquadron}
             onActivateForFlight={handleActivateSquadronForFlight}
             onUnlockSquadron={handleUnlockSquadron}
+            onOpenCommissioningPipeline={(sq) => setCommissioningModalSquadron(sq)}
             formatCurrency={formatCurrency}
             playerProfile={playerProfile}
             currentBudget={budget}
@@ -1301,6 +1697,14 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ACTIVE TIME-BASED PROCESSES & DELIVERIES HUD */}
+      <TacticalDeliveryHUD
+        language={language}
+        pendingJobs={pendingJobs}
+        onExpediteJob={handleExpediteJob}
+        formatCurrency={formatCurrency}
+      />
 
       {/* HORIZONTAL 8-MODULE NAVIGATOR TABS */}
       <div className="grid grid-cols-4 gap-1 bg-black/50 p-1 rounded-xl border border-white/10 text-[8px] font-mono font-bold">
@@ -1640,7 +2044,7 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* MODULE 2: SQUADRON CREW ROSTER & GROUND SUPPORT UPGRADES       */}
+        {/* MODULE 2: SQUADRON CREW ROSTER, TRAINING & CAPACITY            */}
         {/* ============================================================== */}
         {activeModule === 'crew_vitals' && (
           <div className="space-y-3">
@@ -1648,233 +2052,429 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-[9px] font-mono text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5" />
-                <span>{language === 'id' ? 'MANAJEMEN KRU & TIM DARAT SKUADRON' : 'SQUADRON CREW & GROUND SUPPORT'}</span>
+                <span>{language === 'id' ? 'MANAJEMEN PERSONIL & PUSAT DIKLAT' : 'PERSONNEL ROSTER & TRAINING WING'}</span>
               </span>
               <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
                 TOTAL: {totalSquadronCrew} PERSONIL
               </span>
             </div>
 
-            {/* Explanation Note */}
-            <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[7.5px] font-mono text-blue-200 leading-relaxed">
-              {language === 'id' 
-                ? 'Total personil kru disesuaikan dengan jumlah pesawat aktif (default 1 unit = 13 kru pendukung). Anda dapat merekrut dan meng-upgrade personil kru per divisi dengan membayar sejumlah dana anggaran.'
-                : 'Total squadron crew is calibrated to fleet size (default 1 unit = 13 crew personnel). You can recruit and upgrade department personnel using squadron budget.'}
+            {/* Crew Sub-tab Switcher (3 Tabs) */}
+            <div className="grid grid-cols-3 gap-1 bg-black/60 p-1 rounded-xl border border-white/10 text-[8.5px] font-mono font-bold">
+              <button
+                type="button"
+                onClick={() => setCrewSubTab('roster')}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5",
+                  crewSubTab === 'roster'
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                    : "text-white/40 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <Users className="w-3 h-3" />
+                <span>{language === 'id' ? 'Daftar Personil' : 'Personnel Roster'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCrewSubTab('academy')}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 relative",
+                  crewSubTab === 'academy'
+                    ? "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+                    : "text-white/40 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <GraduationCap className="w-3.5 h-3.5 text-amber-300" />
+                <span>{language === 'id' ? 'Wing Diklat' : 'Training Wing'}</span>
+                {pendingJobs.some(j => j.type === 'TRAINING') && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping absolute top-1 right-1" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCrewSubTab('capacity')}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5",
+                  crewSubTab === 'capacity'
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                    : "text-white/40 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <Shield className="w-3 h-3 text-emerald-300" />
+                <span>{language === 'id' ? 'Kapasitas Riil' : 'Real Ratio'}</span>
+              </button>
             </div>
 
-            <div className="space-y-2.5 text-[9px] font-mono">
-              
-              {/* DIVISION 1: PILOT & FLIGHT CREW */}
-              <div className="p-3 bg-amber-950/20 border border-amber-500/40 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Award className="w-4 h-4 text-amber-400" />
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        {playerProfile?.rank || 'Mayor'} {playerProfile?.commanderName || 'Adhiatma'}
-                      </span>
-                      <span className="text-[7.5px] text-amber-300 uppercase">
-                        PILOT IN COMMAND (PIC) • {crew.callSign || 'DRAGON-01'}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[7.5px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-500/30">
-                    FIT TO FLY (100%)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1 text-[7.5px] text-center">
-                  <div className="bg-black/50 p-1.5 rounded">
-                    <span className="text-white/40 block">STAMINA</span>
-                    <span className="text-emerald-400 font-bold">98%</span>
-                  </div>
-                  <div className="bg-black/50 p-1.5 rounded">
-                    <span className="text-white/40 block">G-TOLERANCE</span>
-                    <span className="text-cyan-400 font-bold">9.0G CERT</span>
-                  </div>
-                  <div className="bg-black/50 p-1.5 rounded">
-                    <span className="text-white/40 block">FLIGHT CREW</span>
-                    <span className="text-blue-300 font-bold">{crewRoster.flightCrew.count} Penerbang</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* DIVISION 2: GROUND CREW (MARSHALLER & LINE HANDLING) */}
-              <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg">
-                      <UserCheck className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        {crewRoster.groundCrew.nameId}
-                      </span>
-                      <span className="text-[7.5px] text-white/50 uppercase">
-                        LEVEL {crewRoster.groundCrew.level} • {crewRoster.groundCrew.role}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-xs font-black text-cyan-300 font-mono">
-                      {crewRoster.groundCrew.count} Personil
+            {/* SUB-TAB 1: ROSTER & RECRUITMENT */}
+            {crewSubTab === 'roster' && (
+              <div className="space-y-3">
+                {/* PILOT SECTION: INDIVIDUAL PROFILES (Click to view dossier & rating) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                      <Award className="w-3 h-3" />
+                      <span>{language === 'id' ? 'KORPS PENERBANG TEMPUR (KLIK UNTUK DETAIL & RATING)' : 'COMBAT PILOT CORPS (CLICK FOR DOSSIER)'}</span>
                     </span>
+                    <span className="text-[7.5px] font-mono text-white/50">{individualPilots.length} Penerbang Aktif</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {individualPilots.map((pilot) => (
+                      <div
+                        key={pilot.id}
+                        onClick={() => setSelectedDossierPilot(pilot)}
+                        className="p-2.5 bg-black/60 hover:bg-slate-900/80 border border-amber-500/30 hover:border-amber-400 rounded-xl cursor-pointer transition-all space-y-2 group shadow-sm"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[7.5px] font-mono text-amber-400 font-bold block">
+                              {pilot.rank} {pilot.name}
+                            </span>
+                            <span className="text-[6.5px] font-mono text-white/50">
+                              "{pilot.callsign}" • {pilot.flightHours} Jam Terbang
+                            </span>
+                          </div>
+
+                          <div className="text-right flex flex-col items-end">
+                            <span className={cn(
+                              "text-[6.5px] font-mono px-1.5 py-0.5 rounded font-bold uppercase",
+                              pilot.status === 'READY' ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" :
+                              pilot.status === 'TRAINING' ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse" :
+                              "bg-cyan-500/20 text-cyan-300"
+                            )}>
+                              {pilot.status}
+                            </span>
+                            <div className="flex items-center gap-0.5 mt-0.5">
+                              <span className="text-[7.5px] text-amber-300 font-bold font-mono">★ {pilot.rating.toFixed(1)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[7px] font-mono text-white/60 border-t border-white/10 pt-1">
+                          <span className="truncate max-w-[140px] text-cyan-300">{pilot.specialization}</span>
+                          <span className="text-amber-400/80 group-hover:text-amber-300 flex items-center gap-0.5">
+                            Lihat Dossier →
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <p className="text-[7.5px] text-white/60 leading-tight">
-                  {crewRoster.groundCrew.descriptionId}
-                </p>
-
-                <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                  <span className="text-[7.5px] text-amber-300 font-bold">
-                    Biaya: {formatCurrency(crewRoster.groundCrew.costPerUpgrade)}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => handleUpgradeCrew('groundCrew')}
-                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
-                  >
-                    <UserPlus className="w-2.5 h-2.5" />
-                    <span>+2 Kru Darat</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* DIVISION 3: TECHNICIAN CREW (SKATEK MESIN & STRUKTUR) */}
-              <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg">
-                      <Wrench className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        {crewRoster.technicians.nameId}
-                      </span>
-                      <span className="text-[7.5px] text-white/50 uppercase">
-                        LEVEL {crewRoster.technicians.level} • {crewRoster.technicians.role}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-xs font-black text-amber-300 font-mono">
-                      {crewRoster.technicians.count} Teknisi
+                {/* CREW MEMBERS SECTION: INDIVIDUAL PROFILES (Click to view dossier) */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-mono font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                      <Wrench className="w-3 h-3" />
+                      <span>{language === 'id' ? 'PERSONIL KRU DARAT & TEKNISI (KLIK UNTUK DETAIL)' : 'GROUND CREW & TECHNICIANS'}</span>
                     </span>
+                    <span className="text-[7.5px] font-mono text-white/50">{individualCrewMembers.length} Personil Terdata</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {individualCrewMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        onClick={() => setSelectedDossierCrew(member)}
+                        className="p-2.5 bg-black/60 hover:bg-slate-900/80 border border-white/10 hover:border-cyan-400/50 rounded-xl cursor-pointer transition-all space-y-1.5 group shadow-sm"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[7.5px] font-mono text-white font-bold block">
+                              {member.rank} {member.name}
+                            </span>
+                            <span className="text-[6.5px] font-mono text-white/50">
+                              {member.division} • {member.specialization}
+                            </span>
+                          </div>
+
+                          <div className="text-right flex flex-col items-end">
+                            <span className="text-[7.5px] text-amber-300 font-bold font-mono">
+                              ★ {member.rating.toFixed(1)}
+                            </span>
+                            <span className="text-[6.5px] text-emerald-400 font-mono">
+                              Efisiensi {member.efficiencyScore}%
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[7px] font-mono text-white/40 border-t border-white/10 pt-1">
+                          <span className="truncate max-w-[140px] text-white/60">{member.certifications.length} Sertifikasi Militer</span>
+                          <span className="text-cyan-400/80 group-hover:text-cyan-300">
+                            Buka Detail →
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <p className="text-[7.5px] text-white/60 leading-tight">
-                  {crewRoster.technicians.descriptionId}
-                </p>
-
-                <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                  <span className="text-[7.5px] text-amber-300 font-bold">
-                    Biaya: {formatCurrency(crewRoster.technicians.costPerUpgrade)}
+                {/* DEPARTMENT BATCH RECRUITMENT CARDS */}
+                <div className="space-y-2 pt-2 border-t border-white/10">
+                  <span className="text-[8px] font-mono font-bold text-white/60 uppercase tracking-wider block">
+                    {language === 'id' ? 'REKRUTMEN & PENAMBAHAN PERSONIL DIVISI' : 'DEPARTMENT SQUADRON REINFORCEMENT'}
                   </span>
 
-                  <button
-                    type="button"
-                    onClick={() => handleUpgradeCrew('technicians')}
-                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
-                  >
-                    <UserPlus className="w-2.5 h-2.5" />
-                    <span>+2 Teknisi</span>
-                  </button>
+                  <div className="space-y-2">
+                    {/* DIVISION 2: GROUND CREW */}
+                    <div className="p-2.5 bg-black/50 border border-white/10 rounded-xl space-y-1.5 text-[9px] font-mono">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg">
+                            <UserCheck className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              {crewRoster.groundCrew.nameId}
+                            </span>
+                            <span className="text-[7px] text-white/50 uppercase">
+                              Level {crewRoster.groundCrew.level} • {crewRoster.groundCrew.role}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-xs font-black text-cyan-300 font-mono">
+                          {crewRoster.groundCrew.count} Personil
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                        <span className="text-[7.5px] text-amber-300 font-bold">
+                          Biaya: {formatCurrency(crewRoster.groundCrew.costPerUpgrade)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleUpgradeCrew('groundCrew')}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
+                        >
+                          <UserPlus className="w-2.5 h-2.5" />
+                          <span>+2 Personil</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DIVISION 3: TECHNICIANS */}
+                    <div className="p-2.5 bg-black/50 border border-white/10 rounded-xl space-y-1.5 text-[9px] font-mono">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg">
+                            <Wrench className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              {crewRoster.technicians.nameId}
+                            </span>
+                            <span className="text-[7px] text-white/50 uppercase">
+                              Level {crewRoster.technicians.level} • {crewRoster.technicians.role}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-xs font-black text-amber-300 font-mono">
+                          {crewRoster.technicians.count} Teknisi
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                        <span className="text-[7.5px] text-amber-300 font-bold">
+                          Biaya: {formatCurrency(crewRoster.technicians.costPerUpgrade)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleUpgradeCrew('technicians')}
+                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
+                        >
+                          <UserPlus className="w-2.5 h-2.5" />
+                          <span>+2 Teknisi</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DIVISION 4: FUEL CREW */}
+                    <div className="p-2.5 bg-black/50 border border-white/10 rounded-xl space-y-1.5 text-[9px] font-mono">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg">
+                            <Fuel className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              {crewRoster.fuelCrew.nameId}
+                            </span>
+                            <span className="text-[7px] text-white/50 uppercase">
+                              Level {crewRoster.fuelCrew.level} • {crewRoster.fuelCrew.role}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-xs font-black text-emerald-300 font-mono">
+                          {crewRoster.fuelCrew.count} Kru Avtur
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                        <span className="text-[7.5px] text-amber-300 font-bold">
+                          Biaya: {formatCurrency(crewRoster.fuelCrew.costPerUpgrade)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleUpgradeCrew('fuelCrew')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
+                        >
+                          <UserPlus className="w-2.5 h-2.5" />
+                          <span>+2 Kru Avtur</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DIVISION 5: ELECTRIC & ARMAMENT CREW */}
+                    <div className="p-2.5 bg-black/50 border border-white/10 rounded-xl space-y-1.5 text-[9px] font-mono">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-purple-500/20 text-purple-400 rounded-lg">
+                            <Zap className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              {crewRoster.electricCrew.nameId}
+                            </span>
+                            <span className="text-[7px] text-white/50 uppercase">
+                              Level {crewRoster.electricCrew.level} • {crewRoster.electricCrew.role}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-xs font-black text-purple-300 font-mono">
+                          {crewRoster.electricCrew.count} Spesialis
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                        <span className="text-[7.5px] text-amber-300 font-bold">
+                          Biaya: {formatCurrency(crewRoster.electricCrew.costPerUpgrade)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleUpgradeCrew('electricCrew')}
+                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
+                        >
+                          <UserPlus className="w-2.5 h-2.5" />
+                          <span>+2 Spesialis</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* DIVISION 4: FUEL CREW (PENGISIAN AVTUR) */}
-              <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg">
-                      <Fuel className="w-4 h-4" />
+            {/* SUB-TAB 2: ACADEMY & ADVANCED TRAINING */}
+            {crewSubTab === 'academy' && (
+              <SquadronTrainingView
+                language={language}
+                pilots={individualPilots}
+                crewMembers={individualCrewMembers}
+                budget={budget}
+                pendingJobs={pendingJobs}
+                onStartTraining={handleStartTraining}
+                formatCurrency={formatCurrency}
+              />
+            )}
+
+            {/* SUB-TAB 3: REAL CAPACITY & HANDLING RATIO */}
+            {crewSubTab === 'capacity' && (() => {
+              const capAnalysis = calculateSquadronCrewCapacity(crewRoster, ownedFleet.length);
+              return (
+                <div className="space-y-3 font-mono text-[9px]">
+                  {/* Analysis Banner */}
+                  <div className="p-3 bg-gradient-to-r from-slate-900 to-black rounded-xl border border-emerald-500/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">
+                        {language === 'id' ? 'ANALISIS RASIO KEBUTUHAN RIIL PERSONIL' : 'REAL SQUADRON CREW RATIO ANALYSIS'}
+                      </span>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded font-bold text-[8px]",
+                        !capAnalysis.isOverburdened && capAnalysis.readinessPercent >= 100
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" 
+                          : "bg-red-500/20 text-red-300 border border-red-500/30"
+                      )}>
+                        {!capAnalysis.isOverburdened && capAnalysis.readinessPercent >= 100 
+                          ? (language === 'id' ? 'STATUS: IDEAL' : 'STATUS: OPTIMAL') 
+                          : (language === 'id' ? 'STATUS: DEFISIT' : 'STATUS: DEFICIT')}
+                      </span>
                     </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        {crewRoster.fuelCrew.nameId}
-                      </span>
-                      <span className="text-[7.5px] text-white/50 uppercase">
-                        LEVEL {crewRoster.fuelCrew.level} • {crewRoster.fuelCrew.role}
-                      </span>
+
+                    <p className="text-[7.5px] text-white/60 leading-relaxed">
+                      {language === 'id'
+                        ? `Setiap pesawat tempur modern di pangkalan TNI AU membutuhkan rasio minimum: 2 Penerbang, 4 Kru Darat, 4 Teknisi Pemeliharaan, 2 Kru Bahan Bakar, dan 1 Spesialis Listrik/Avionik agar dapat beroperasi penuh.`
+                        : `Every modern combat aircraft requires dedicated ratio: 2 Pilots, 4 Ground crew, 4 Technicians, 2 Fuel crew, 1 Avionics/Electric specialist for 100% sortie turnaround.`}
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/10 text-[8px]">
+                      <div className="bg-black/50 p-2 rounded-lg">
+                        <span className="text-white/50 block">SKOR KESIAPAN OPERASIONAL</span>
+                        <span className="text-sm font-black text-emerald-400">{capAnalysis.readinessPercent}%</span>
+                      </div>
+                      <div className="bg-black/50 p-2 rounded-lg">
+                        <span className="text-white/50 block">TOTAL PERSONIL TERPENUHI</span>
+                        <span className="text-sm font-black text-cyan-300">{capAnalysis.currentTotalPersonnel} / {capAnalysis.requiredTotalPersonnel} Kru</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-xs font-black text-emerald-300 font-mono">
-                      {crewRoster.fuelCrew.count} Kru Avtur
+                  {/* Ratio Breakdown Table */}
+                  <div className="bg-black/50 p-3 rounded-xl border border-white/10 space-y-2">
+                    <span className="text-[8px] font-bold text-amber-400 uppercase tracking-wider block">
+                      {language === 'id' ? 'RINCIAN KEBUTUHAN PER DIVISI' : 'DEPARTMENT RATIO BREAKDOWN'}
                     </span>
-                  </div>
-                </div>
 
-                <p className="text-[7.5px] text-white/60 leading-tight">
-                  {crewRoster.fuelCrew.descriptionId}
-                </p>
-
-                <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                  <span className="text-[7.5px] text-amber-300 font-bold">
-                    Biaya: {formatCurrency(crewRoster.fuelCrew.costPerUpgrade)}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => handleUpgradeCrew('fuelCrew')}
-                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
-                  >
-                    <UserPlus className="w-2.5 h-2.5" />
-                    <span>+2 Kru Avtur</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* DIVISION 5: ELECTRIC & ARMAMENT CREW (GPU & SENJATA) */}
-              <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-purple-500/20 text-purple-400 rounded-lg">
-                      <Zap className="w-4 h-4" />
+                    <div className="space-y-1.5 text-[8px]">
+                      <div className="flex items-center justify-between p-1.5 bg-white/5 rounded border border-white/5">
+                        <span>Korps Penerbang (Flight Crew)</span>
+                        <span className="font-bold text-amber-300">{crewRoster.flightCrew.count} / {ownedFleet.length * 2} Pilot</span>
+                      </div>
+                      <div className="flex items-center justify-between p-1.5 bg-white/5 rounded border border-white/5">
+                        <span>Kru Darat (Ground Crew)</span>
+                        <span className={crewRoster.groundCrew.count >= ownedFleet.length * 4 ? "text-emerald-300 font-bold" : "text-red-300 font-bold"}>
+                          {crewRoster.groundCrew.count} / {ownedFleet.length * 4} Kru
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-1.5 bg-white/5 rounded border border-white/5">
+                        <span>Teknisi Pemeliharaan (Skatek)</span>
+                        <span className={crewRoster.technicians.count >= ownedFleet.length * 4 ? "text-emerald-300 font-bold" : "text-red-300 font-bold"}>
+                          {crewRoster.technicians.count} / {ownedFleet.length * 4} Teknisi
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-1.5 bg-white/5 rounded border border-white/5">
+                        <span>Kru Pengisian Avtur (Fuel Crew)</span>
+                        <span className={crewRoster.fuelCrew.count >= ownedFleet.length * 2 ? "text-emerald-300 font-bold" : "text-red-300 font-bold"}>
+                          {crewRoster.fuelCrew.count} / {ownedFleet.length * 2} Kru
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-1.5 bg-white/5 rounded border border-white/5">
+                        <span>Spesialis Listrik & Avionik</span>
+                        <span className={crewRoster.electricCrew.count >= ownedFleet.length * 1 ? "text-emerald-300 font-bold" : "text-red-300 font-bold"}>
+                          {crewRoster.electricCrew.count} / {ownedFleet.length * 1} Spesialis
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        {crewRoster.electricCrew.nameId}
-                      </span>
-                      <span className="text-[7.5px] text-white/50 uppercase">
-                        LEVEL {crewRoster.electricCrew.level} • {crewRoster.electricCrew.role}
-                      </span>
-                    </div>
-                  </div>
 
-                  <div className="text-right">
-                    <span className="text-xs font-black text-purple-300 font-mono">
-                      {crewRoster.electricCrew.count} Spesialis
-                    </span>
+                    {capAnalysis.bottlenecks.length > 0 && (
+                      <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[7.5px] text-amber-200">
+                        <span className="font-bold block mb-0.5">⚠️ Divisi yang Membutuhkan Rekrutmen Tambahan:</span>
+                        <span>{capAnalysis.bottlenecks.join(', ')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <p className="text-[7.5px] text-white/60 leading-tight">
-                  {crewRoster.electricCrew.descriptionId}
-                </p>
-
-                <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                  <span className="text-[7.5px] text-amber-300 font-bold">
-                    Biaya: {formatCurrency(crewRoster.electricCrew.costPerUpgrade)}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => handleUpgradeCrew('electricCrew')}
-                    className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[8px] font-bold uppercase transition-all flex items-center gap-1 active:scale-95 shadow"
-                  >
-                    <UserPlus className="w-2.5 h-2.5" />
-                    <span>+2 Kru Listrik</span>
-                  </button>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         )}
 
@@ -2475,6 +3075,64 @@ export const SquadronTab: React.FC<SquadronTabProps> = ({
       </div>
       </>
       )}
+
+      {/* INDIVIDUAL CREW & PILOT DOSSIER MODAL */}
+      <CrewDetailModal
+        isOpen={Boolean(selectedDossierPilot || selectedDossierCrew)}
+        onClose={() => {
+          setSelectedDossierPilot(null);
+          setSelectedDossierCrew(null);
+        }}
+        language={language}
+        pilot={selectedDossierPilot}
+        crewMember={selectedDossierCrew}
+        formatCurrency={formatCurrency}
+        onStartTrainingCourse={(candidateId, isPilot, courseId) => {
+          handleStartTraining(candidateId, isPilot, courseId);
+          setSelectedDossierPilot(null);
+          setSelectedDossierCrew(null);
+        }}
+      />
+
+      {/* 6-STEP SQUADRON COMMISSIONING PIPELINE MODAL */}
+      <SquadronCommissioningPipelineModal
+        isOpen={commissioningModalSquadron !== null}
+        onClose={() => setCommissioningModalSquadron(null)}
+        language={language}
+        targetSquadron={commissioningModalSquadron}
+        currentBudget={budget}
+        playerRankIndex={getRankLevel(playerProfile?.rank)}
+        playerRankName={playerProfile?.rank || 'Mayor Pnb'}
+        formatCurrency={formatCurrency}
+        onCommissionStep={(stepNumber, stepCost, durationSeconds, stepName) => {
+          setBudget(prev => Math.max(0, prev - stepCost));
+          if (speak) {
+            speak(
+              language === 'id'
+                ? `Tahap ${stepNumber}: ${stepName} mulai dikerjakan.`
+                : `Stage ${stepNumber}: ${stepName} in execution.`
+            );
+          }
+        }}
+        onCompleteCommissioning={(squadron) => {
+          if (!unlockedSquadronIds.includes(squadron.id)) {
+            setUnlockedSquadronIds(prev => [...prev, squadron.id]);
+          }
+          handleSelectSquadron(squadron);
+          setCommissioningModalSquadron(null);
+          const successMsg = language === 'id'
+            ? `Selamat! Pipeline Pembangunan & Otorisasi ${squadron.name} Berhasil Diselesaikan Secara Paripurna!`
+            : `Congratulations! Commissioning pipeline for ${squadron.name} successfully finalized!`;
+          setTransactionFeedback(successMsg);
+          if (speak) {
+            speak(
+              language === 'id'
+                ? `Pangkalan skuadron ${squadron.name} resmi diresmikan dan siap bertugas mempertahankan kedaulatan dirgantara.`
+                : `Squadron base successfully commissioned and ready for active air defense.`
+            );
+          }
+        }}
+      />
     </motion.div>
   );
 };

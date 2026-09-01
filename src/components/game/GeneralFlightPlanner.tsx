@@ -50,6 +50,10 @@ interface GeneralFlightPlannerProps {
   onRTB?: () => void;
   isRTB?: boolean;
   deleteCurrentRoute?: () => void;
+  isManualWaypointMode?: boolean;
+  setIsManualWaypointMode?: (v: boolean) => void;
+  plannerWaypoints?: PlannerWaypoint[];
+  setPlannerWaypoints?: React.Dispatch<React.SetStateAction<PlannerWaypoint[]>>;
 }
 
 interface PlannerWaypoint {
@@ -81,12 +85,23 @@ export const GeneralFlightPlanner: React.FC<GeneralFlightPlannerProps> = ({
   isTracking,
   onRTB,
   isRTB,
-  deleteCurrentRoute
+  deleteCurrentRoute,
+  isManualWaypointMode = false,
+  setIsManualWaypointMode,
+  plannerWaypoints: plannerWaypointsProp,
+  setPlannerWaypoints: setPlannerWaypointsProp
 }) => {
   // 1. MISSION NAME
   const [missionName, setMissionName] = useState<string>(
     language === 'id' ? 'OPERASI ELANG NUSANTARA - PATROLI WILAYAH' : 'OPERATION EAGLE SHIELD - ROUTINE PATROL'
   );
+
+  // Manual Coordinate Input state
+  const [manualInputLat, setManualInputLat] = useState('');
+  const [manualInputLng, setManualInputLng] = useState('');
+  const [manualInputAlt, setManualInputAlt] = useState(25000);
+  const [manualInputName, setManualInputName] = useState('');
+  const [showManualForm, setShowManualForm] = useState(false);
 
   // 9. CRUISE ALTITUDE
   const [cruiseAltitude, setCruiseAltitude] = useState<number>(targetAltitude || 25000);
@@ -128,7 +143,7 @@ export const GeneralFlightPlanner: React.FC<GeneralFlightPlannerProps> = ({
   }, [departureAirport, playerProfile]);
 
   // Intermediate Planner Waypoints state
-  const [plannerWaypoints, setPlannerWaypoints] = useState<PlannerWaypoint[]>(() => {
+  const [internalPlannerWaypoints, setInternalPlannerWaypoints] = useState<PlannerWaypoint[]>(() => {
     // Generate 3 intelligent default waypoints based on Home Base coordinates
     const baseLat = homeBase.lat;
     const baseLng = homeBase.lng;
@@ -156,6 +171,9 @@ export const GeneralFlightPlanner: React.FC<GeneralFlightPlannerProps> = ({
       }
     ];
   });
+
+  const plannerWaypoints = plannerWaypointsProp !== undefined ? plannerWaypointsProp : internalPlannerWaypoints;
+  const setPlannerWaypoints = setPlannerWaypointsProp !== undefined ? setPlannerWaypointsProp : setInternalPlannerWaypoints;
 
   // Ensure default Takeoff & Landing are set to Home Base if null
   useEffect(() => {
@@ -269,6 +287,25 @@ export const GeneralFlightPlanner: React.FC<GeneralFlightPlannerProps> = ({
         altitude: cruiseAltitude
       }
     ]);
+  };
+
+  const handleAddDirectManualWaypoint = () => {
+    const lat = parseFloat(manualInputLat);
+    const lng = parseFloat(manualInputLng);
+    if (isNaN(lat) || isNaN(lng)) return;
+    const name = manualInputName.trim() || `WAYPOINT 0${plannerWaypoints.length + 1}`;
+    const newWp: PlannerWaypoint = {
+      id: 'wp-' + Date.now(),
+      name,
+      lat: Number(lat.toFixed(4)),
+      lng: Number(lng.toFixed(4)),
+      altitude: manualInputAlt || cruiseAltitude
+    };
+    setPlannerWaypoints(prev => [...prev, newWp]);
+    setManualInputLat('');
+    setManualInputLng('');
+    setManualInputName('');
+    setShowManualForm(false);
   };
 
   const handleGenerateDefaultRoute = () => {
@@ -443,14 +480,102 @@ export const GeneralFlightPlanner: React.FC<GeneralFlightPlannerProps> = ({
             <Compass className="w-3.5 h-3.5 text-amber-400" />
             <span>{language === 'id' ? 'TITIK NAVIGASI (WAYPOINTS)' : 'MISSION WAYPOINTS'} ({plannerWaypoints.length})</span>
           </label>
-          <button
-            onClick={handleAddWaypoint}
-            className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 rounded-lg text-[9px] font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
-          >
-            <Plus className="w-3 h-3" />
-            <span>{language === 'id' ? 'TAMBAH TITIK' : 'ADD WAYPOINT'}</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowManualForm(!showManualForm)}
+              className="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[8.5px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-1 transition-all"
+            >
+              <span>{language === 'id' ? '⌨️ INPUT KOORDINAT' : '⌨️ MANUAL COORD'}</span>
+            </button>
+            <button
+              onClick={handleAddWaypoint}
+              className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 rounded-lg text-[9px] font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+            >
+              <Plus className="w-3 h-3" />
+              <span>{language === 'id' ? 'TAMBAH' : 'ADD'}</span>
+            </button>
+          </div>
         </div>
+
+        {/* MAP CLICK PLACEMENT TOGGLE */}
+        {setIsManualWaypointMode && (
+          <button
+            type="button"
+            onClick={() => setIsManualWaypointMode(!isManualWaypointMode)}
+            className={cn(
+              "w-full py-2 px-3 rounded-xl border text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md",
+              isManualWaypointMode
+                ? "bg-blue-600 text-white border-blue-400 ring-2 ring-blue-400/50 animate-pulse font-mono"
+                : "bg-blue-950/40 text-blue-300 border-blue-500/40 hover:bg-blue-900/50"
+            )}
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span>
+              {isManualWaypointMode
+                ? (language === 'id' ? '📍 MODE KLIK PETA AKTIF (KLIK PETA UNTUK MENAMBAH TITIK)' : '📍 MAP CLICK MODE ACTIVE (CLICK MAP TO ADD)')
+                : (language === 'id' ? '📍 Mode Tempatkan Waypoint di Peta (Klik Peta)' : '📍 Place Waypoint on Map (Map Click Mode)')}
+            </span>
+          </button>
+        )}
+
+        {/* MANUAL COORDINATE INPUT EXPANDABLE CARD */}
+        {showManualForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-2"
+          >
+            <span className="text-[8.5px] font-bold uppercase tracking-wider text-amber-300 block">
+              {language === 'id' ? 'Masukkan Koordinat Manual:' : 'Input Manual Coordinates:'}
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                type="text"
+                placeholder="Nama (cth: WP BRAVO)"
+                value={manualInputName}
+                onChange={(e) => setManualInputName(e.target.value)}
+                className="bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-[9.5px] text-white font-mono focus:outline-none focus:border-blue-400"
+              />
+              <input
+                type="text"
+                placeholder="Latitude (cth: -6.25)"
+                value={manualInputLat}
+                onChange={(e) => setManualInputLat(e.target.value)}
+                className="bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-[9.5px] text-white font-mono focus:outline-none focus:border-blue-400"
+              />
+              <input
+                type="text"
+                placeholder="Longitude (cth: 106.88)"
+                value={manualInputLng}
+                onChange={(e) => setManualInputLng(e.target.value)}
+                className="bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-[9.5px] text-white font-mono focus:outline-none focus:border-blue-400"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-lg border border-white/5">
+                <span className="text-[8px] text-white/40 font-mono">ALT:</span>
+                <input
+                  type="number"
+                  step="1000"
+                  value={manualInputAlt}
+                  onChange={(e) => setManualInputAlt(Number(e.target.value))}
+                  className="bg-transparent text-[9.5px] text-blue-300 font-mono focus:outline-none w-full"
+                />
+                <span className="text-[8px] text-white/40 font-mono">FT</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddDirectManualWaypoint}
+                disabled={!manualInputLat || !manualInputLng}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+              >
+                {language === 'id' ? '+ Tambahkan' : '+ Add Point'}
+              </button>
+            </div>
+          </motion.div>
+        )}
 
         <div className="space-y-3">
           {plannerWaypoints.length === 0 ? (

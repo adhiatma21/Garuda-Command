@@ -1,4 +1,17 @@
-import { Aircraft, OwnedAircraft, SquadronCrewRoster, FacilityState, PlayerProfile, WeaponItem, AircraftGenerationUpgrade } from '../types';
+import { 
+  Aircraft, 
+  OwnedAircraft, 
+  SquadronCrewRoster, 
+  FacilityState, 
+  PlayerProfile, 
+  WeaponItem, 
+  AircraftGenerationUpgrade,
+  IndividualPilot,
+  IndividualCrewMember,
+  TrainingCourse,
+  PendingDeliveryItem,
+  SquadronCommissioningPipeline
+} from '../types';
 import { AIRCRAFT_PRESETS, SQUADRON_DATA } from '../constants';
 
 export const INITIAL_SQUADRON_BUDGET = 1500000000; // Rp 1.500.000.000
@@ -1048,4 +1061,341 @@ export function createDefaultCrewRoster(pilotName: string, callSign: string): Sq
       role: 'Electrical Power, Avionics & Weapons'
     }
   };
+}
+
+// REAL-WORLD MILITARY AVIATION STAFF RATIOS PER FIGHTER AIRCRAFT
+export const REAL_CREW_REQUIREMENTS_PER_AIRCRAFT = {
+  pilots: 2, // 1 PIC + 1 WSO / Wingman rotation
+  groundCrew: 3, // Marshaller, Towing, Line Safety
+  technicians: 4, // Airframe, Turbofan Engine, Hydraulics, Avionics
+  fuelCrew: 2, // Bowser Truck & Quality Hydrometer
+  electricCrew: 2, // 115V 400Hz GPU & Munitions Loader
+  totalRequiredPerPlane: 13
+};
+
+// Calculate Squadron Crew Support Capacity & Workload
+export function calculateSquadronCrewCapacity(roster: SquadronCrewRoster, activeFleetCount: number) {
+  const pilotCap = Math.floor((roster.flightCrew?.count || 2) / REAL_CREW_REQUIREMENTS_PER_AIRCRAFT.pilots);
+  const groundCap = Math.floor((roster.groundCrew?.count || 4) / REAL_CREW_REQUIREMENTS_PER_AIRCRAFT.groundCrew);
+  const techCap = Math.floor((roster.technicians?.count || 3) / REAL_CREW_REQUIREMENTS_PER_AIRCRAFT.technicians);
+  const fuelCap = Math.floor((roster.fuelCrew?.count || 2) / REAL_CREW_REQUIREMENTS_PER_AIRCRAFT.fuelCrew);
+  const electricCap = Math.floor((roster.electricCrew?.count || 2) / REAL_CREW_REQUIREMENTS_PER_AIRCRAFT.electricCrew);
+
+  // Maximum aircraft that can be simultaneously serviced and flight-cleared
+  const effectiveMaxHandlingCapacity = Math.max(1, Math.min(pilotCap, groundCap, techCap, fuelCap, electricCap));
+  
+  // Workload Ratio (100% = balanced, >100% = overburdened)
+  const requiredTotalPersonnel = activeFleetCount * REAL_CREW_REQUIREMENTS_PER_AIRCRAFT.totalRequiredPerPlane;
+  const currentTotalPersonnel = (roster.flightCrew?.count || 2) + 
+    (roster.groundCrew?.count || 0) + 
+    (roster.technicians?.count || 0) + 
+    (roster.fuelCrew?.count || 0) + 
+    (roster.electricCrew?.count || 0);
+
+  const readinessPercent = Math.min(100, Math.round((currentTotalPersonnel / Math.max(1, requiredTotalPersonnel)) * 100));
+  const isOverburdened = activeFleetCount > effectiveMaxHandlingCapacity;
+
+  const bottlenecks: string[] = [];
+  if (pilotCap < activeFleetCount) bottlenecks.push(`Penerbang (${roster.flightCrew?.count || 2}/${activeFleetCount * 2})`);
+  if (groundCap < activeFleetCount) bottlenecks.push(`Kru Darat (${roster.groundCrew?.count || 0}/${activeFleetCount * 3})`);
+  if (techCap < activeFleetCount) bottlenecks.push(`Teknisi (${roster.technicians?.count || 0}/${activeFleetCount * 4})`);
+  if (fuelCap < activeFleetCount) bottlenecks.push(`Kru Avtur (${roster.fuelCrew?.count || 0}/${activeFleetCount * 2})`);
+  if (electricCap < activeFleetCount) bottlenecks.push(`Kru Listrik/Senjata (${roster.electricCrew?.count || 0}/${activeFleetCount * 2})`);
+
+  return {
+    effectiveMaxHandlingCapacity,
+    readinessPercent,
+    isOverburdened,
+    bottlenecks,
+    pilotCap,
+    groundCap,
+    techCap,
+    fuelCap,
+    electricCap,
+    currentTotalPersonnel,
+    requiredTotalPersonnel
+  };
+}
+
+// TRAINING ACADEMY COURSES (SEKOLAH PENERBANG & WING DIKLAT TEKNIK)
+export const MILITARY_TRAINING_COURSES: TrainingCourse[] = [
+  // --- PILOT TRAINING COURSES ---
+  {
+    id: 'pilot_bvr_tactics',
+    targetType: 'pilot',
+    titleId: 'Taktik Tempur BVR & Link-16 Datalink',
+    titleEn: 'BVR Air Combat Tactics & Link-16',
+    descriptionId: 'Latihan skenario Beyond Visual Range, peluncuran rudal AMRAAM/Meteor multi-target, dan integrasi situational awareness Link-16.',
+    descriptionEn: 'Beyond-Visual-Range tactics, multi-target AMRAAM/Meteor launches, and Link-16 situational awareness integration.',
+    durationSeconds: 16,
+    cost: 35000000,
+    statBoost: {
+      ratingGain: 0.5,
+      specializationBadge: 'BVR Air Superiority',
+      description: 'Meningkatkan akurasi BVR radar lock dan rating pilot +0.5 Bintang.'
+    }
+  },
+  {
+    id: 'pilot_night_intercept',
+    targetType: 'pilot',
+    titleId: 'Intersepsi Malam & NVG All-Weather',
+    titleEn: 'Night NVG Intercept & All-Weather Ops',
+    descriptionId: 'Kualifikasi terbang malam dengan Night Vision Goggles (NVG) dan manuver sergap dalam cuaca badai tropis monsun.',
+    descriptionEn: 'Night Vision Goggle qualification and all-weather tactical intercept in adverse tropical storms.',
+    durationSeconds: 18,
+    cost: 40000000,
+    statBoost: {
+      ratingGain: 0.6,
+      specializationBadge: 'Night Ops',
+      description: 'Kesiapan sortie malam hari 100% dan rating pilot +0.6 Bintang.'
+    }
+  },
+  {
+    id: 'pilot_high_g_dogfight',
+    targetType: 'pilot',
+    titleId: 'Master Dogfight WVR & High-G (+9.0G)',
+    titleEn: 'High-G Dogfight Mastery (+9.0G Combat)',
+    descriptionId: 'Pelatihan manuver ekstrem High-Yo-Yo, Scissors, dan ketahanan anti-G blackout hingga +9.0G dalam dogfight jarak dekat.',
+    descriptionEn: 'High-Yo-Yo, scissors maneuvers, and high-G tolerance conditioning up to +9.0G in WVR dogfights.',
+    durationSeconds: 20,
+    cost: 48000000,
+    statBoost: {
+      ratingGain: 0.8,
+      specializationBadge: 'Dogfight Ace',
+      description: 'Ketahanan G-Force maksimum (+9.5G) dan rating pilot +0.8 Bintang.'
+    }
+  },
+  {
+    id: 'pilot_precision_strike_wso',
+    targetType: 'pilot',
+    titleId: 'Kualifikasi Serangan Presisi CAS & Laser Pod',
+    titleEn: 'Precision Strike CAS & Targeting Pod Qualification',
+    descriptionId: 'Sertifikasi pengoperasian Sniper XR / Damocles pod, panduan bom pintar JDAM/GBU-12, dan close air support terkoordinasi.',
+    descriptionEn: 'Targeting pod operations, laser/GPS guided munitions drop, and close air support coordination.',
+    durationSeconds: 15,
+    cost: 38000000,
+    statBoost: {
+      ratingGain: 0.5,
+      specializationBadge: 'Precision Strike CAS',
+      description: 'Efektivitas serang darat +35% dan rating WSO/Pilot +0.5 Bintang.'
+    }
+  },
+
+  // --- TECHNICIAN & CREW COURSES ---
+  {
+    id: 'crew_fast_turnaround',
+    targetType: 'ground',
+    titleId: 'Hot-Pit Refueling & Fast Turnaround Standar NATO/TNI',
+    titleEn: 'Hot-Pit Refueling & Rapid Turnaround',
+    descriptionId: 'Pengisian bahan bakar dan persenjataan ulang dengan mesin jet tetap menyala (hot-pit) untuk respon scramble 5 menit.',
+    descriptionEn: 'Live engine hot-pit refueling and quick turnaround rearming for 5-minute alert scramble.',
+    durationSeconds: 12,
+    cost: 25000000,
+    statBoost: {
+      ratingGain: 0.5,
+      efficiencyBonus: 20,
+      description: 'Mempercepat waktu servis turnaround pesawat sebesar 25%.'
+    }
+  },
+  {
+    id: 'tech_aesa_calibration',
+    targetType: 'technician',
+    titleId: 'Sertifikasi Kalibrasi Radar AESA & ECM Pods',
+    titleEn: 'AESA Radar & Electronic Warfare Calibration',
+    descriptionId: 'Diagnostik transmisi modul Gallium Nitride (GaN) radar AESA dan pemrograman frekuensi anti-jamming.',
+    descriptionEn: 'GaN AESA TR module diagnostics and electronic counter-countermeasures (ECCM) frequency programming.',
+    durationSeconds: 15,
+    cost: 32000000,
+    statBoost: {
+      ratingGain: 0.6,
+      efficiencyBonus: 25,
+      description: 'Menjamin kelaikan sistem avionik dan radar mencapai 100% lebih cepat.'
+    }
+  },
+  {
+    id: 'tech_turbofan_overhaul',
+    targetType: 'technician',
+    titleId: 'Depot Overhaul Turbofan Engine (Depohar 30)',
+    titleEn: 'Heavy Jet Engine Overhaul Specialist',
+    descriptionId: 'Borescope inspection, penggantian bilah turbin titanium, dan kalibrasi afterburner turbofan F110 / AL-31F.',
+    descriptionEn: 'Borescope inspection, turbine blade replacement, and afterburner calibration for heavy turbofans.',
+    durationSeconds: 22,
+    cost: 50000000,
+    statBoost: {
+      ratingGain: 0.8,
+      efficiencyBonus: 35,
+      description: 'Mereduksi risiko kerusakan mesin saat terbang hingga 0%.'
+    }
+  },
+  {
+    id: 'crew_munitions_loading',
+    targetType: 'electric',
+    titleId: 'Sertifikasi Pemuatan Rudal BVR & Smart Munitions',
+    titleEn: 'Smart Munitions & BVR Missile Loading',
+    descriptionId: 'Prosedur aman instalasi kawat pneumatik, penguncian rel pylons, dan uji BIT sistem persenjataan 1760 databus.',
+    descriptionEn: 'Safe installation, pylon rail locking, and MIL-STD-1760 weapons databus BIT verification.',
+    durationSeconds: 14,
+    cost: 28000000,
+    statBoost: {
+      ratingGain: 0.5,
+      efficiencyBonus: 20,
+      description: 'Kesiapan muatan hardpoint persenjataan instan dan bebas malfungsi.'
+    }
+  }
+];
+
+// GENERATE INITIAL INDIVIDUAL PILOTS FOR SQUADRON
+export function generateDefaultPilotsForSquadron(squadronName: string, callsignPrefix: string, commanderName?: string): IndividualPilot[] {
+  const cName = commanderName || 'Mayor Pnb Adhiatma';
+  return [
+    {
+      id: `pilot-${squadronName}-1`,
+      name: cName,
+      callsign: `${callsignPrefix}-01 (LEADER)`,
+      rank: 'Mayor Pnb',
+      nrp: '528194',
+      role: 'PIC',
+      flightHours: 1240.5,
+      rating: 4.8,
+      specialization: 'BVR Air Superiority',
+      status: 'READY',
+      stamina: 100,
+      gTolerance: 9.0,
+      missionCount: 84,
+      medals: ['Satya Lencana Kesetiaan VIII', 'Bintang Swa Bhuwana Paksa Nararya', 'Lencana Dogfight Ace'],
+      assignedAircraftTail: 'TS-1601'
+    },
+    {
+      id: `pilot-${squadronName}-2`,
+      name: 'Kapten Pnb Bima Perkasa',
+      callsign: `${callsignPrefix}-02 (VIPER-2)`,
+      rank: 'Kapten Pnb',
+      nrp: '534812',
+      role: 'WSO',
+      flightHours: 850.0,
+      rating: 4.5,
+      specialization: 'Precision Strike CAS',
+      status: 'READY',
+      stamina: 96,
+      gTolerance: 9.0,
+      missionCount: 52,
+      medals: ['Satya Lencana Dharma Nusa', 'Lencana Kualifikasi WSO'],
+      assignedAircraftTail: 'TS-1601'
+    },
+    {
+      id: `pilot-${squadronName}-3`,
+      name: 'Lettu Pnb Arya Yudha',
+      callsign: `${callsignPrefix}-03 (WINGMAN)`,
+      rank: 'Lettu Pnb',
+      nrp: '541290',
+      role: 'WINGMAN_1',
+      flightHours: 520.0,
+      rating: 4.2,
+      specialization: 'Tactical Intercept',
+      status: 'READY',
+      stamina: 94,
+      gTolerance: 8.5,
+      missionCount: 28,
+      medals: ['Satya Lencana Wira Dharma'],
+      assignedAircraftTail: 'TS-1602'
+    },
+    {
+      id: `pilot-${squadronName}-4`,
+      name: 'Letda Pnb Dimas Prasetya',
+      callsign: `${callsignPrefix}-04 (TRAINEE)`,
+      rank: 'Letda Pnb',
+      nrp: '547833',
+      role: 'WINGMAN_2',
+      flightHours: 280.0,
+      rating: 3.8,
+      specialization: 'Dogfight Ace',
+      status: 'READY',
+      stamina: 98,
+      gTolerance: 8.0,
+      missionCount: 12,
+      medals: ['Lencana Penerbang Sekbang TNI AU'],
+      assignedAircraftTail: 'TS-1602'
+    }
+  ];
+}
+
+// GENERATE INITIAL INDIVIDUAL CREW MEMBERS
+export function generateDefaultCrewMembersForSquadron(squadronName: string): IndividualCrewMember[] {
+  return [
+    {
+      id: `crew-${squadronName}-g1`,
+      name: 'Serka Bambang Hartono',
+      nrp: '512941',
+      department: 'groundCrew',
+      roleTitle: 'Chief Marshaller & Line Safety',
+      rank: 'Serka',
+      rating: 4.7,
+      experienceLevel: 4,
+      specialization: 'Aircraft Marshalling & Towing Lead',
+      efficiencyScore: 95,
+      status: 'ACTIVE',
+      tasksCompleted: 420,
+      certifications: ['Marshaller Master Class', 'Towing Heavy Cert']
+    },
+    {
+      id: `crew-${squadronName}-t1`,
+      name: 'Pelda Joko Sudibyo',
+      nrp: '508219',
+      department: 'technicians',
+      roleTitle: 'Kepala Teknisi Mesin & Powerplant (Skatek)',
+      rank: 'Pelda',
+      rating: 4.9,
+      experienceLevel: 5,
+      specialization: 'Turbofan Diagnostics & Heavy Maintenance',
+      efficiencyScore: 98,
+      status: 'ACTIVE',
+      tasksCompleted: 680,
+      certifications: ['Turbofan F110/AL31 Master Tech', 'NDI Inspector Lvl 3']
+    },
+    {
+      id: `crew-${squadronName}-t2`,
+      name: 'Sertu Eko Wahyudi',
+      nrp: '523091',
+      department: 'technicians',
+      roleTitle: 'Spesialis Avionik & Radar AESA',
+      rank: 'Sertu',
+      rating: 4.5,
+      experienceLevel: 3,
+      specialization: 'AESA Radar Calibration & Link-16 Bus',
+      efficiencyScore: 92,
+      status: 'ACTIVE',
+      tasksCompleted: 310,
+      certifications: ['Avionics Mil-STD-1553B Cert', 'ECCM Analyzer']
+    },
+    {
+      id: `crew-${squadronName}-f1`,
+      name: 'Serma Agus Riyadi',
+      nrp: '515820',
+      department: 'fuelCrew',
+      roleTitle: 'Chief Bowser Fuel Operations',
+      rank: 'Serma',
+      rating: 4.6,
+      experienceLevel: 4,
+      specialization: 'Aviation Jet-A1 Purity & Hot-Pit Refueling',
+      efficiencyScore: 94,
+      status: 'ACTIVE',
+      tasksCompleted: 530,
+      certifications: ['Hot-Pit Safety Officer', 'Hydrometer Lab Tech']
+    },
+    {
+      id: `crew-${squadronName}-e1`,
+      name: 'Serka Hendra Gunawan',
+      nrp: '518472',
+      department: 'electricCrew',
+      roleTitle: 'Spesialis Senjata & Ground Power Unit (GPU)',
+      rank: 'Serka',
+      rating: 4.8,
+      experienceLevel: 4,
+      specialization: 'Ordnance Loading (AMRAAM/GBU) & 115V 400Hz GPU',
+      efficiencyScore: 96,
+      status: 'ACTIVE',
+      tasksCompleted: 490,
+      certifications: ['Weapons Munitions Master', 'High Voltage GPU Tech']
+    }
+  ];
 }

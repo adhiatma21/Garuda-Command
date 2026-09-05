@@ -8,7 +8,6 @@ import L from 'leaflet';
 import { 
   Trash2, 
   Play, 
-  Square, 
   CheckCircle2, 
   Settings2,
   Plane,
@@ -20,7 +19,6 @@ import {
   LayoutDashboard,
   Save,
   FolderOpen,
-  RefreshCw,
   Menu,
   X,
   User,
@@ -57,8 +55,10 @@ import {
   ReconState,
   ReconIntelTarget,
   ReconFlightData,
-  PlannerWaypoint
+  PlannerWaypoint,
+  ActiveMission
 } from './types';
+import { getSquadronMissionCapacity } from './data/squadronState';
 import { getDistance, getBearing, cn, calculateFuelPlan } from './lib/utils';
 import { MILITARY_AIRPORTS, MilitaryAirport } from './airports';
 import { AIRCRAFT_PRESETS } from './constants';
@@ -107,6 +107,15 @@ export default function App() {
   const [showLandingChoice, setShowLandingChoice] = useState(false);
   const [showMissionSummary, setShowMissionSummary] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1); // 1x, 5x, 10x, 50x
+
+  // Multi-Mission Support State
+  const [activeMissions, setActiveMissions] = useState<ActiveMission[]>([]);
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
+  const [isRadioMuted, setIsRadioMuted] = useState<boolean>(false);
+  const activeMissionsRef = useRef<ActiveMission[]>([]);
+  activeMissionsRef.current = activeMissions;
+  const selectedMissionIdRef = useRef<string | null>(null);
+  selectedMissionIdRef.current = selectedMissionId;
   
   // Flight Control States
   const [autoPilot, setAutoPilot] = useState(true);
@@ -273,6 +282,15 @@ export default function App() {
   useEffect(() => {
     setFuelCapacityMultiplier(useSubTank ? 1.3 : 1.0);
   }, [useSubTank]);
+
+  useEffect(() => {
+    // When multi-missions are running, radio comms is text-only
+    speechManager.setTextOnly(activeMissions.length > 1);
+  }, [activeMissions.length]);
+
+  useEffect(() => {
+    speechManager.setMuted(isRadioMuted);
+  }, [isRadioMuted]);
 
   const currentWeightCalculation = useMemo(() => {
     return calculateAircraftWeights(selectedAircraft, crew, payload, useSubTank, combatMode);
@@ -497,6 +515,10 @@ export default function App() {
     setLandingScenarioTriggered(false);
     setShowLandingChoice(false);
     setShowMissionSummary(false);
+    setActiveMissions([]);
+    activeMissionsRef.current = [];
+    setSelectedMissionId(null);
+    selectedMissionIdRef.current = null;
 
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
@@ -573,6 +595,21 @@ export default function App() {
   }, []);
 
   const startTracking = useCallback(() => {
+    // Check squadron capacity for concurrent missions
+    const capacity = getSquadronMissionCapacity(playerProfile);
+    if (activeMissions.length >= capacity.maxConcurrentMissions) {
+      setActiveScenario({
+        id: 'capacity-limit-' + Date.now(),
+        type: 'TRAFFIC',
+        message: language === 'id' ? 'BATAS KAPASITAS MISI TERCAPAI!' : 'MISSION CAPACITY LIMIT REACHED!',
+        actionRequired: language === 'id' 
+          ? `Kapasitas skuadron saat ini maksimal ${capacity.maxConcurrentMissions} misi bersamaan (Armada siap: ${capacity.fleetCount}, Kapasitas kru: ${capacity.crewCapacity}). Buka tab Skuadron untuk menambah armada pesawat atau merekrut kru.`
+          : `Squadron maximum capacity is ${capacity.maxConcurrentMissions} concurrent missions (Ready fleet: ${capacity.fleetCount}, Crew capacity: ${capacity.crewCapacity}). Visit Squadron tab to acquire aircraft or recruit crew members.`,
+        resolved: false
+      });
+      return;
+    }
+
     if (!missionType) {
       setActiveScenario({
         id: 'validation-' + Date.now(),
@@ -796,7 +833,222 @@ export default function App() {
       speak(language === 'id' ? `Menara, ${callSign} siap taxi untuk lepas landas. Mohon instruksi keberangkatan SID satu-alfa.` : `Tower, ${callSign} ready for taxi and departure. Requesting SID 1-Alpha instructions.`);
       atcRespond(language === 'id' ? `${callSign}, Garuda Tower. Ijin taxi ke holding point runway satu enam via taxiway Delta. Lapor jika siap lepas landas.` : `${callSign}, Garuda Tower. Taxi to holding point runway 16 via taxiway Delta. Report ready for departure.`);
     }
-  }, [waypoints, language, initialFuel, missionType, vvipStartPoint, vvipEndPoint, rendezvousPoint, selectedAircraft, departureAirport, rendezvousLat, rendezvousLng, vvipTargetAircraft, crew.callSign, speak, atcRespond]);
+
+    // Create and register new ActiveMission for multi-mission capability
+    const missionNumber = activeMissions.length + 1;
+    const missionColors = ['#38bdf8', '#34d399', '#f59e0b', '#ec4899', '#a855f7', '#06b6d4'];
+    const assignedColor = missionColors[(missionNumber - 1) % missionColors.length];
+    const missionCallSign = callSign;
+
+    const missionStartPos = missionType === 'VVIPEscort'
+      ? { lat: departureAirport?.lat || vvipStartPoint?.lat || 0, lng: departureAirport?.lng || vvipStartPoint?.lng || 0 }
+      : { lat: waypoints[0]?.lat || 0, lng: waypoints[0]?.lng || 0 };
+
+    const missionStartHdg = missionType === 'VVIPEscort'
+      ? getBearing(missionStartPos.lat, missionStartPos.lng, rendezvousPoint?.lat || missionStartPos.lat, rendezvousPoint?.lng || missionStartPos.lng)
+      : getBearing(waypoints[0]?.lat || 0, waypoints[0]?.lng || 0, waypoints[1]?.lat || waypoints[0]?.lat || 0, waypoints[1]?.lng || waypoints[0]?.lng || 0);
+
+    const newActiveMission: ActiveMission = {
+      id: 'mission-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      missionNumber,
+      name: `Misi Running ${missionNumber}`,
+      callSign: missionCallSign,
+      missionType: missionType || 'General Flight',
+      selectedAircraft: { ...selectedAircraft },
+      crew: { ...crew, callSign: missionCallSign },
+      departureAirport: departureAirport ? { ...departureAirport } : null,
+      arrivalAirport: arrivalAirport ? { ...arrivalAirport } : null,
+      waypoints: waypoints.map(w => ({ ...w })),
+      currentPos: missionStartPos,
+      currentAltitude: 30000,
+      speed: selectedAircraft.cruiseSpeed || 450,
+      heading: missionStartHdg,
+      targetAltitude: targetAltitude || 25000,
+      targetHeading: missionStartHdg,
+      targetSpeed: selectedAircraft.cruiseSpeed || 450,
+      verticalSpeed: 2000,
+      autoPilot: true,
+      combatMode: combatMode,
+      flightDirector: true,
+      initialFuel: initialFuel,
+      fuelRemaining: initialFuel,
+      payload: payload,
+      useSubTank: useSubTank,
+      isRTB: false,
+      isSimulating: true,
+      isTracking: true,
+      flightHours: 0,
+      points: 0,
+      color: assignedColor,
+      createdAt: Date.now(),
+      vvipData: missionType === 'VVIPEscort' && vvipStartPoint && vvipEndPoint && rendezvousPoint ? {
+        vvipTargetAircraft: { ...vvipTargetAircraft },
+        vvipStartPoint: vvipStartPoint,
+        vvipEndPoint: vvipEndPoint,
+        rendezvousPoint: rendezvousPoint,
+        vvipPos: { lat: vvipStartPoint.lat, lng: vvipStartPoint.lng },
+        vvipHeading: getBearing(vvipStartPoint.lat, vvipStartPoint.lng, vvipEndPoint.lat, vvipEndPoint.lng),
+        escortStage: 'pre_rendezvous',
+        vvipReachedRV: false,
+        playerEta: 0,
+        vvipEta: 0
+      } : undefined
+    };
+
+    setActiveMissions(prev => [...prev, newActiveMission]);
+    setSelectedMissionId(newActiveMission.id);
+    selectedMissionIdRef.current = newActiveMission.id;
+  }, [waypoints, language, initialFuel, missionType, vvipStartPoint, vvipEndPoint, rendezvousPoint, selectedAircraft, departureAirport, arrivalAirport, rendezvousLat, rendezvousLng, vvipTargetAircraft, crew, targetAltitude, combatMode, payload, useSubTank, activeMissions.length, playerProfile, speak, atcRespond]);
+
+  const handleSelectMission = useCallback((missionId: string | null) => {
+    setSelectedMissionId(missionId);
+    selectedMissionIdRef.current = missionId;
+    if (!missionId) return;
+
+    const targetMission = activeMissionsRef.current.find(m => m.id === missionId);
+    if (targetMission) {
+      if (targetMission.currentPos) {
+        setCurrentPos(targetMission.currentPos);
+        currentPosRef.current = targetMission.currentPos;
+      }
+      if (targetMission.heading !== undefined) {
+        setHeading(targetMission.heading);
+        headingRef.current = targetMission.heading;
+      }
+      setWaypoints(targetMission.waypoints);
+      waypointsRef.current = targetMission.waypoints;
+      setSelectedAircraft(targetMission.selectedAircraft);
+      setCurrentAltitude(targetMission.currentAltitude);
+      setSpeed(targetMission.speed);
+      setAutoPilot(targetMission.autoPilot);
+      autoPilotRef.current = targetMission.autoPilot;
+      setIsRTB(targetMission.isRTB);
+      isRTBRef.current = targetMission.isRTB;
+      setCombatMode(targetMission.combatMode);
+      setFuelRemaining(targetMission.fuelRemaining);
+      setInitialFuel(targetMission.initialFuel);
+      setPayload(targetMission.payload);
+      setMissionType(targetMission.missionType);
+      setCrew(targetMission.crew);
+      if (targetMission.departureAirport) setDepartureAirport(targetMission.departureAirport);
+      if (targetMission.arrivalAirport) setArrivalAirport(targetMission.arrivalAirport);
+    }
+  }, []);
+
+  const handleRTBMission = useCallback((missionId: string) => {
+    setActiveMissions(prev => prev.map(m => {
+      if (m.id !== missionId) return m;
+      const homeBase = m.departureAirport || MILITARY_AIRPORTS[0];
+      const curPos = m.currentPos || { lat: homeBase.lat, lng: homeBase.lng };
+      const rtbHdg = Math.round(getBearing(curPos.lat, curPos.lng, homeBase.lat, homeBase.lng));
+
+      const rtbWps: Waypoint[] = [
+        {
+          id: 'rtb-start-' + Date.now(),
+          name: language === 'id' ? 'TITIK RTB' : 'RTB POINT',
+          lat: curPos.lat,
+          lng: curPos.lng,
+          reached: true,
+          type: 'waypoint',
+          planAltitude: m.currentAltitude,
+          planSpeed: m.speed
+        },
+        {
+          id: 'rtb-dest-' + Date.now(),
+          name: `RTB: ${homeBase.name}`,
+          lat: homeBase.lat,
+          lng: homeBase.lng,
+          reached: false,
+          type: 'airport',
+          planAltitude: 0,
+          planSpeed: 160
+        }
+      ];
+
+      return {
+        ...m,
+        isRTB: true,
+        autoPilot: true,
+        targetHeading: rtbHdg,
+        waypoints: rtbWps
+      };
+    }));
+
+    if (selectedMissionIdRef.current === missionId) {
+      setIsRTB(true);
+      isRTBRef.current = true;
+      setAutoPilot(true);
+      autoPilotRef.current = true;
+    }
+  }, [language]);
+
+  const handleAbortMission = useCallback((missionId: string) => {
+    setActiveMissions(prev => {
+      const remaining = prev.filter(m => m.id !== missionId);
+      if (remaining.length === 0) {
+        setIsSimulating(false);
+        setIsTracking(false);
+        setSelectedMissionId(null);
+        selectedMissionIdRef.current = null;
+      } else if (selectedMissionIdRef.current === missionId) {
+        const nextSelected = remaining[0].id;
+        setSelectedMissionId(nextSelected);
+        selectedMissionIdRef.current = nextSelected;
+      }
+      return remaining;
+    });
+  }, []);
+
+  const handleAddNewMissionPlan = useCallback(() => {
+    setSelectedMissionId(null);
+    selectedMissionIdRef.current = null;
+
+    const nextMissionNum = activeMissionsRef.current.length + 1;
+    const nextPreset = AIRCRAFT_PRESETS[(nextMissionNum - 1) % AIRCRAFT_PRESETS.length];
+    if (nextPreset) {
+      setSelectedAircraft(nextPreset);
+      setInitialFuel(nextPreset.maxFuel);
+      setFuelRemaining(nextPreset.maxFuel);
+      setTargetSpeed(nextPreset.cruiseSpeed || 450);
+      setTargetAltitude(25000);
+    }
+
+    const newCallsign = `ELANG-0${nextMissionNum}`;
+    setCrew(prev => ({ ...prev, callSign: newCallsign }));
+
+    const home = playerProfile?.homeBase || MILITARY_AIRPORTS[0];
+    const destination = MILITARY_AIRPORTS[nextMissionNum % MILITARY_AIRPORTS.length];
+
+    setDepartureAirport(home);
+    setArrivalAirport(destination);
+
+    const readyWps: Waypoint[] = [
+      {
+        id: `dep-${Date.now()}`,
+        name: home.name,
+        lat: home.lat,
+        lng: home.lng,
+        reached: false,
+        type: 'airport',
+        planAltitude: 0,
+        planSpeed: 0
+      },
+      {
+        id: `dest-${Date.now() + 1}`,
+        name: destination.name,
+        lat: destination.lat,
+        lng: destination.lng,
+        reached: false,
+        type: 'airport',
+        planAltitude: 25000,
+        planSpeed: nextPreset?.cruiseSpeed || 450
+      }
+    ];
+    setWaypoints(readyWps);
+    waypointsRef.current = readyWps;
+    setIsRTB(false);
+    isRTBRef.current = false;
+  }, [playerProfile]);
 
 
   const startTrackingAfterRefuel = () => {
@@ -1744,6 +1996,65 @@ export default function App() {
         return playerStep.nextPos;
       });
 
+      // 2B. Step All Active Multi-Missions Smoothly
+      if (activeMissionsRef.current.length > 0) {
+        setActiveMissions(prevMissions => {
+          return prevMissions.map(m => {
+            if (!m.isSimulating || !m.currentPos) return m;
+
+            const mCurSpeed = m.speed || m.selectedAircraft?.cruiseSpeed || 450;
+            const mNextWp = m.waypoints.find(w => !w.reached);
+
+            const mStep = calculatePlayerStep(
+              m.currentPos,
+              m.heading,
+              mCurSpeed,
+              m.targetHeading,
+              m.autoPilot,
+              mNextWp || null,
+              simSpeed,
+              m.selectedAircraft,
+              false,
+              dtSeconds,
+              gameTimeScale,
+              m.selectedAircraft.fuelBurnRate || 1200
+            );
+
+            let updatedWps = m.waypoints;
+            if (mNextWp) {
+              const d = getDistance(mStep.nextPos.lat, mStep.nextPos.lng, mNextWp.lat, mNextWp.lng);
+              const thresh = Math.max(0.8, (mCurSpeed / 3600) * simSpeed * gameTimeScale * dtSeconds * 1.5);
+              if (d <= thresh) {
+                updatedWps = m.waypoints.map(w => w.id === mNextWp.id ? { ...w, reached: true, timestamp: Date.now() } : w);
+              }
+            }
+
+            return {
+              ...m,
+              currentPos: mStep.nextPos,
+              heading: mStep.nextHeading,
+              fuelRemaining: Math.max(0, m.fuelRemaining - mStep.fuelBurned),
+              flightHours: (m.flightHours || 0) + mStep.flightHoursGained,
+              waypoints: updatedWps
+            };
+          });
+        });
+
+        // Sync currently selected mission to primary telemetry
+        if (selectedMissionIdRef.current) {
+          const curSelected = activeMissionsRef.current.find(m => m.id === selectedMissionIdRef.current);
+          if (curSelected && curSelected.currentPos) {
+            setCurrentPos(curSelected.currentPos);
+            currentPosRef.current = curSelected.currentPos;
+            setHeading(curSelected.heading);
+            headingRef.current = curSelected.heading;
+            setFuelRemaining(curSelected.fuelRemaining);
+            setSpeed(curSelected.speed);
+            setCurrentAltitude(curSelected.currentAltitude);
+          }
+        }
+      }
+
       // 3. Mark Waypoints as Reached for Missions & RTB Handling
       setWaypoints(prev => {
         const nextIdx = prev.findIndex(w => !w.reached);
@@ -2623,7 +2934,7 @@ export default function App() {
                       targetSpeed={targetSpeed}
                       setTargetSpeed={setTargetSpeed}
                       onStartMission={startTracking}
-                      isTracking={isTracking}
+                      isTracking={selectedMissionId !== null && isTracking}
                       onRTB={handleRTB}
                       isRTB={isRTB}
                       deleteCurrentRoute={deleteCurrentRoute}
@@ -2662,6 +2973,15 @@ export default function App() {
                       setIsPickingVvipRV={setIsPickingVvipRV}
                       plannerWaypoints={plannerWaypoints}
                       setPlannerWaypoints={setPlannerWaypoints}
+                      activeMissions={activeMissions}
+                      selectedMissionId={selectedMissionId}
+                      onSelectMission={handleSelectMission}
+                      onAbortMission={handleAbortMission}
+                      onRTBMission={handleRTBMission}
+                      maxConcurrentMissions={getSquadronMissionCapacity(playerProfile).maxConcurrentMissions}
+                      fleetCount={getSquadronMissionCapacity(playerProfile).fleetCount}
+                      crewCapacity={getSquadronMissionCapacity(playerProfile).crewCapacity}
+                      onAddNewMissionPlan={handleAddNewMissionPlan}
                     />
                   )}
                   {activeTab === 'squadron' && (
@@ -2684,57 +3004,30 @@ export default function App() {
                 </AnimatePresence>
               </div>
 
-              {/* Bottom Panel - Flight Status (Only on Flight Tab) */}
-              {activeTab === 'flight' && (
-                <div className="p-4 bg-[#121826] border-t border-white/5 space-y-4">
+              {/* Bottom Panel - Route Distance & Fuel Summary (Only on Flight Tab when active route exists) */}
+              {activeTab === 'flight' && waypoints.length > 1 && (
+                <div className="p-4 bg-[#121826] border-t border-white/5">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-black/40 p-3 rounded-lg border border-white/5">
                       <p className="text-[9px] text-white/30 uppercase tracking-widest mb-1">{language === 'id' ? 'Total Jarak' : 'Total Distance'}</p>
                       <p className="text-lg font-mono font-bold text-blue-400">
-                        {waypoints.length > 1 ? Math.round(waypoints.reduce((acc, wp, idx) => {
+                        {Math.round(waypoints.reduce((acc, wp, idx) => {
                           if (idx === 0) return acc;
                           const prev = waypoints[idx - 1];
                           return acc + getDistance(prev.lat, prev.lng, wp.lat, wp.lng);
-                        }, 0)) : 0} <span className="text-xs text-white/40">NM</span>
+                        }, 0))} <span className="text-xs text-white/40">NM</span>
                       </p>
                     </div>
                     <div className="bg-black/40 p-3 rounded-lg border border-white/5">
                       <p className="text-[9px] text-white/30 uppercase tracking-widest mb-1">{language === 'id' ? 'Estimasi BBM' : 'Est. Fuel'}</p>
                       <p className="text-lg font-mono font-bold text-orange-400">
-                        {waypoints.length > 1 ? Math.round(waypoints.reduce((acc, wp, idx) => {
+                        {Math.round(waypoints.reduce((acc, wp, idx) => {
                           if (idx === 0) return acc;
                           const prev = waypoints[idx - 1];
                           return acc + (getDistance(prev.lat, prev.lng, wp.lat, wp.lng) * selectedAircraft.burnRate);
-                        }, 0)) : 0} <span className="text-xs text-white/40">LBS</span>
+                        }, 0))} <span className="text-xs text-white/40">LBS</span>
                       </p>
                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <button 
-                      disabled={missionType !== 'VVIPEscort' && (missionType === 'Reconnaissance' || missionType === 'Recon' ? false : waypoints.length === 0)}
-                      onClick={isTracking ? stopTracking : startTracking}
-                      className={cn(
-                        "w-full py-3 rounded-xl font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl text-[10px]",
-                        isTracking ? "bg-red-600 hover:bg-red-500 text-white" : "bg-blue-600 hover:bg-blue-500 text-white"
-                      )}
-                    >
-                      {isTracking ? <Square className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-                      {isTracking ? (language === 'id' ? "Berhenti" : "Stop") : (language === 'id' ? "Mulai" : "Start")}
-                    </button>
-                    <button 
-                      disabled={(!isTracking && !isSimulating) || isRTB}
-                      onClick={handleRTB}
-                      className={cn(
-                        "w-full py-3 rounded-xl font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl text-[10px]",
-                        isRTB 
-                          ? "bg-orange-600/50 text-orange-200 cursor-not-allowed border border-orange-400/30"
-                          : "bg-orange-600 hover:bg-orange-500 text-white disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-                      )}
-                    >
-                      <RefreshCw className={cn("w-4 h-4", isRTB ? "animate-spin" : "")} />
-                      {isRTB ? (language === 'id' ? "RTB AKTIF" : "RTB ACTIVE") : (language === 'id' ? "RTB" : "RTB")}
-                    </button>
                   </div>
                 </div>
               )}
@@ -2791,6 +3084,9 @@ export default function App() {
                     selectedRecon={selectedRecon}
                     reconDeparture={reconDeparture}
                     reconArrival={reconArrival}
+                    activeMissions={activeMissions}
+                    selectedMissionId={selectedMissionId}
+                    onSelectMission={handleSelectMission}
                   />
 
                   {/* Fuel Warning Overlay */}
@@ -2989,6 +3285,9 @@ export default function App() {
                     onTransmitMessage={handleTransmitPlayerMessage}
                     onRTB={handleRTB}
                     isRTB={isRTB}
+                    isRadioMuted={isRadioMuted}
+                    onToggleRadioMute={() => setIsRadioMuted(prev => !prev)}
+                    isMultiMission={activeMissions.length > 1}
                   />
 
                   {/* Map & Simulation Control Bar (Simulation speed, Center on Aircraft, Zoom +/-) */}

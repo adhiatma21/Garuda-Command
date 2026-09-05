@@ -498,3 +498,75 @@ export interface FlightState {
   missionType: string;
   escortStage: EscortStage;
 }
+
+export interface ActiveMission {
+  id: string;
+  missionNumber: number;
+  name: string;
+  callSign: string;
+  missionType: string;
+  selectedAircraft: Aircraft;
+  crew: Crew;
+  departureAirport: {
+    id: string;
+    name: string;
+    icao: string;
+    city?: string;
+    lat: number;
+    lng: number;
+    region?: string;
+    type?: string;
+  } | null;
+  arrivalAirport: {
+    id: string;
+    name: string;
+    icao: string;
+    city?: string;
+    lat: number;
+    lng: number;
+    region?: string;
+    type?: string;
+  } | null;
+  waypoints: Waypoint[];
+  currentPos: Position | null;
+  currentAltitude: number;
+  speed: number;
+  heading: number;
+  targetAltitude: number;
+  targetHeading: number;
+  targetSpeed: number;
+  verticalSpeed: number;
+  autoPilot: boolean;
+  combatMode: boolean;
+  flightDirector: boolean;
+  initialFuel: number;
+  fuelRemaining: number;
+  payload: number;
+  useSubTank: boolean;
+  isRTB: boolean;
+  isSimulating: boolean;
+  isTracking: boolean;
+  flightHours: number;
+  points: number;
+  color: string;
+  createdAt: number;
+  vvipData?: {
+    vvipTargetAircraft: Aircraft;
+    vvipStartPoint: any | null;
+    vvipEndPoint: any | null;
+    rendezvousPoint: Waypoint | null;
+    vvipPos: Position | null;
+    vvipHeading: number;
+    escortStage: EscortStage;
+    vvipReachedRV: boolean;
+    playerEta: number;
+    vvipEta: number;
+  };
+  reconData?: {
+    reconState: ReconState | null;
+    selectedRecon: any | null;
+    reconDeparture: any | null;
+    reconArrival: any | null;
+    reconSurveyPoints: Waypoint[];
+  };
+}

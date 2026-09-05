@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Tooltip, LayersControl, LayerGroup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Plane, Compass, Navigation, Crosshair } from 'lucide-react';
-import { Waypoint, Position, Aircraft, TrafficAircraft, TankerAircraft, EscortStage, ReconState, ReconIntelTarget } from '../../types';
+import { Waypoint, Position, Aircraft, TrafficAircraft, TankerAircraft, EscortStage, ReconState, ReconIntelTarget, ActiveMission } from '../../types';
 import { MILITARY_AIRPORTS, MilitaryAirport } from '../../airports';
 import { INTERNATIONAL_WAYPOINTS } from '../../waypoints';
 import { FIR_REGIONS } from '../../constants';
@@ -51,6 +51,9 @@ interface TacticalRadarMapProps {
   selectedRecon?: ReconAircraft | null;
   reconDeparture?: MilitaryAirport | null;
   reconArrival?: MilitaryAirport | null;
+  activeMissions?: ActiveMission[];
+  selectedMissionId?: string | null;
+  onSelectMission?: (missionId: string) => void;
 }
 
 export const TacticalRadarMap: React.FC<TacticalRadarMapProps> = ({
@@ -92,7 +95,10 @@ export const TacticalRadarMap: React.FC<TacticalRadarMapProps> = ({
   reconState,
   selectedRecon,
   reconDeparture,
-  reconArrival
+  reconArrival,
+  activeMissions = [],
+  selectedMissionId = null,
+  onSelectMission
 }) => {
   // Ultra-Crisp Precision Military Vector Silhouettes (ViewBox: 0 0 64 64)
   // 1. Fighter Jet (Delta + Swept Wings, Canards, Cockpit, Wingtip Rails, Dual Exhaust)
@@ -195,8 +201,9 @@ export const TacticalRadarMap: React.FC<TacticalRadarMapProps> = ({
   `;
 
   // Choose appropriate SVG silhouette based on aircraft configuration
-  const getPlayerAircraftSvg = () => {
-    const acType = selectedAircraft?.type?.toLowerCase() || 'fighter';
+  const getPlayerAircraftSvg = (customAircraft?: Aircraft) => {
+    const acToUse = customAircraft || selectedAircraft;
+    const acType = acToUse?.type?.toLowerCase() || 'fighter';
     if (acType.includes('heli')) {
       return renderHelicopterSvg('#0369a1', 'rgba(56,189,248,0.9)');
     }
@@ -372,37 +379,71 @@ export const TacticalRadarMap: React.FC<TacticalRadarMapProps> = ({
         </React.Fragment>
       ))}
       
-      {/* Smooth Tactical Player Route Lines */}
-      {smoothPlayerRoute.length > 1 && (
-        <React.Fragment>
-          {/* Outer Ambient Glow */}
-          <Polyline 
-            positions={smoothPlayerRoute} 
-            color="#3b82f6" 
-            weight={7} 
-            opacity={0.2}
-            lineCap="round"
-            lineJoin="round"
-          />
-          {/* Mid Accent Glow */}
-          <Polyline 
-            positions={smoothPlayerRoute} 
-            color="#60a5fa" 
-            weight={3.5} 
-            opacity={0.45}
-            lineCap="round"
-            lineJoin="round"
-          />
-          {/* Crisp Core Route */}
-          <Polyline 
-            positions={smoothPlayerRoute} 
-            color="#93c5fd" 
-            weight={1.8} 
-            opacity={0.9}
-            lineCap="round"
-            lineJoin="round"
-          />
-        </React.Fragment>
+      {/* Smooth Tactical Player Route Lines (Multi-Mission or Single) */}
+      {activeMissions && activeMissions.length > 0 ? (
+        activeMissions.map((m) => {
+          const pts = m.waypoints.map(w => ({ lat: w.lat, lng: w.lng }));
+          const smoothPts = pts.length >= 2 ? generateSmoothRoute(pts, 20) : [];
+          if (smoothPts.length < 2) return null;
+          const isSelected = m.id === selectedMissionId;
+          const mColor = m.color || '#38bdf8';
+
+          return (
+            <React.Fragment key={`multi-route-${m.id}`}>
+              {/* Outer Ambient Glow */}
+              <Polyline 
+                positions={smoothPts} 
+                color={mColor} 
+                weight={isSelected ? 8 : 5} 
+                opacity={isSelected ? 0.35 : 0.18}
+                lineCap="round"
+                lineJoin="round"
+              />
+              {/* Core Route Line */}
+              <Polyline 
+                positions={smoothPts} 
+                color={mColor} 
+                weight={isSelected ? 2.5 : 1.8} 
+                opacity={isSelected ? 0.95 : 0.75}
+                dashArray={m.isRTB ? '5, 8' : undefined}
+                lineCap="round"
+                lineJoin="round"
+              />
+            </React.Fragment>
+          );
+        })
+      ) : (
+        smoothPlayerRoute.length > 1 && (
+          <React.Fragment>
+            {/* Outer Ambient Glow */}
+            <Polyline 
+              positions={smoothPlayerRoute} 
+              color="#3b82f6" 
+              weight={7} 
+              opacity={0.2}
+              lineCap="round"
+              lineJoin="round"
+            />
+            {/* Mid Accent Glow */}
+            <Polyline 
+              positions={smoothPlayerRoute} 
+              color="#60a5fa" 
+              weight={3.5} 
+              opacity={0.45}
+              lineCap="round"
+              lineJoin="round"
+            />
+            {/* Crisp Core Route */}
+            <Polyline 
+              positions={smoothPlayerRoute} 
+              color="#93c5fd" 
+              weight={1.8} 
+              opacity={0.9}
+              lineCap="round"
+              lineJoin="round"
+            />
+          </React.Fragment>
+        )
       )}
 
       {/* Smooth VVIP Route Line */}
@@ -788,102 +829,217 @@ export const TacticalRadarMap: React.FC<TacticalRadarMapProps> = ({
         />
       )}
 
-      {/* Player Aircraft Marker - Supreme Tactical Aviation Design */}
-      {currentPos && (
-        <Marker 
-          position={[currentPos.lat, currentPos.lng]}
-          icon={L.divIcon({
-            className: 'bg-transparent',
-            html: `
-              <div class="relative flex flex-col items-center pointer-events-none select-none" style="width: 60px; height: 60px;">
-                <!-- Tactical Target Brackets / Reticle -->
-                <div class="absolute inset-1 rounded-full border border-cyan-400/20 ${isSimulating ? 'animate-pulse' : ''}"></div>
-                <div class="absolute inset-0 rounded-full border-t-2 border-b-2 border-cyan-400/30 ${isSimulating ? 'animate-spin' : ''}" style="animation-duration: 8s;"></div>
+      {/* Aircraft Markers - Multi-Mission or Single Fallback */}
+      {activeMissions && activeMissions.length > 0 ? (
+        activeMissions.map((m) => {
+          if (!m.currentPos) return null;
+          const isSelected = m.id === selectedMissionId;
+          const mColor = m.color || '#38bdf8';
+          const acName = m.selectedAircraft?.name ? m.selectedAircraft.name.split(' ')[0] : 'VIPER';
 
-                <!-- Rotated Aircraft Body + Forward Velocity Vector -->
-                <div class="absolute inset-0 flex items-center justify-center transition-transform duration-200 ease-out" style="transform: rotate(${heading || 0}deg); transform-origin: 30px 30px;">
-                  <!-- Forward Velocity / Heading Vector Line -->
-                  <div class="absolute -top-5 w-0.5 h-5 bg-gradient-to-t from-cyan-400 to-cyan-200 shadow-[0_0_8px_#38bdf8] flex flex-col items-center justify-start">
-                    <div class="w-1.5 h-1.5 -top-1 absolute rotate-45 border-t border-l border-cyan-200"></div>
-                  </div>
-                  
-                  <!-- Vector Silhouette Airframe -->
-                  <div class="w-10 h-10 flex items-center justify-center">
-                    ${getPlayerAircraftSvg()}
-                  </div>
-                </div>
+          return (
+            <Marker 
+              key={`multi-ac-${m.id}`}
+              position={[m.currentPos.lat, m.currentPos.lng]}
+              icon={L.divIcon({
+                className: 'bg-transparent cursor-pointer',
+                html: `
+                  <div class="relative flex flex-col items-center select-none" style="width: 64px; height: 64px;">
+                    <!-- Multi-mission Target Ring -->
+                    <div class="absolute inset-1 rounded-full border ${isSelected ? 'border-cyan-400 shadow-[0_0_15px_rgba(56,189,248,0.7)] animate-pulse' : 'border-white/20'}" style="border-color: ${isSelected ? '#38bdf8' : mColor};"></div>
+                    <div class="absolute inset-0 rounded-full border-t-2 border-b-2 ${m.isSimulating ? 'animate-spin' : ''}" style="border-color: ${mColor}; animation-duration: 8s;"></div>
 
-                <!-- Modern Military Glass-Cockpit HUD Flight Tag -->
-                <div class="absolute top-13 flex flex-col items-center bg-slate-950/95 backdrop-blur-md rounded-xl border ${combatMode ? 'border-red-500/70 shadow-red-500/30' : 'border-cyan-400/60 shadow-cyan-500/30'} shadow-2xl min-w-[105px] overflow-hidden z-20 transition-all">
-                  <!-- Header: Callsign & Status -->
-                  <div class="w-full flex items-center justify-between gap-1.5 px-2 py-0.5 ${combatMode ? 'bg-red-950/80 border-b border-red-500/30' : 'bg-cyan-950/80 border-b border-cyan-400/30'}">
-                    <span class="text-[8px] font-black tracking-wider ${combatMode ? 'text-red-300' : 'text-cyan-300'} font-mono flex items-center gap-1">
-                      <span class="w-1.5 h-1.5 rounded-full ${combatMode ? 'bg-red-400' : 'bg-cyan-400'} animate-ping"></span>
-                      ${callSign || 'EAGLE-01'}
-                    </span>
-                    <span class="text-[7px] font-mono font-bold ${combatMode ? 'text-red-300' : 'text-cyan-200/80'} uppercase">
-                      ${selectedAircraft?.name ? selectedAircraft.name.split(' ')[0] : 'VIPER'}
-                    </span>
-                  </div>
-
-                  <!-- Telemetry: FL | IAS | HDG -->
-                  <div class="px-2 py-1 flex items-center justify-center gap-1.5 text-[7.5px] font-mono text-slate-100 font-bold whitespace-nowrap">
-                    <span>FL${Math.round(currentAltitude / 100).toString().padStart(3, '0')}</span>
-                    <span class="text-cyan-400/50">•</span>
-                    <span>${Math.round(speed || 0)}KTS</span>
-                    <span class="text-cyan-400/50">•</span>
-                    <span class="text-amber-300">${Math.round(heading || 0).toString().padStart(3, '0')}°</span>
-                  </div>
-
-                  <!-- Autopilot / Combat Sub-Badge (if active) -->
-                  ${autoPilot || combatMode ? `
-                    <div class="w-full py-0.5 text-[6.5px] font-black font-mono tracking-widest text-center uppercase ${combatMode ? 'bg-red-600 text-white' : 'bg-amber-500/20 text-amber-300 border-t border-amber-500/30'}">
-                      ${combatMode ? '⚡ COMBAT MODE' : '✈ AP ENGAGED'}
+                    <!-- Rotated Aircraft Body -->
+                    <div class="absolute inset-0 flex items-center justify-center transition-transform duration-200 ease-out" style="transform: rotate(${m.heading || 0}deg); transform-origin: 32px 32px;">
+                      <div class="absolute -top-5 w-0.5 h-5 flex flex-col items-center justify-start" style="background-color: ${mColor};">
+                        <div class="w-1.5 h-1.5 -top-1 absolute rotate-45 border-t border-l" style="border-color: ${mColor};"></div>
+                      </div>
+                      <div class="w-10 h-10 flex items-center justify-center">
+                        ${getPlayerAircraftSvg(m.selectedAircraft)}
+                      </div>
                     </div>
-                  ` : ''}
+
+                    <!-- Glass HUD Flight Tag -->
+                    <div class="absolute top-14 flex flex-col items-center bg-slate-950/95 backdrop-blur-md rounded-xl border shadow-2xl min-w-[110px] overflow-hidden z-20" style="border-color: ${isSelected ? '#38bdf8' : mColor + '60'};">
+                      <!-- Header: Callsign & Mission # -->
+                      <div class="w-full flex items-center justify-between gap-1.5 px-2 py-0.5 border-b" style="background-color: rgba(15, 23, 42, 0.9); border-color: ${mColor}40;">
+                        <span class="text-[8px] font-black font-mono flex items-center gap-1" style="color: ${mColor}">
+                          <span class="w-1.5 h-1.5 rounded-full ${m.isSimulating ? 'animate-ping' : ''}" style="background-color: ${mColor}"></span>
+                          M${m.missionNumber}: ${m.callSign}
+                        </span>
+                        <span class="text-[6.5px] font-mono font-bold text-white/80 uppercase">
+                          ${acName}
+                        </span>
+                      </div>
+
+                      <!-- Telemetry -->
+                      <div class="px-1.5 py-0.5 flex items-center justify-center gap-1 text-[7px] font-mono text-slate-100 font-bold whitespace-nowrap">
+                        <span>FL${Math.round(m.currentAltitude / 100).toString().padStart(3, '0')}</span>
+                        <span class="opacity-40">•</span>
+                        <span>${Math.round(m.speed || 0)}KTS</span>
+                        <span class="opacity-40">•</span>
+                        <span class="text-amber-300">${Math.round(m.heading || 0).toString().padStart(3, '0')}°</span>
+                      </div>
+
+                      ${m.isRTB ? `
+                        <div class="w-full py-0.5 text-[6.5px] font-black font-mono tracking-widest text-center uppercase bg-amber-500/20 text-amber-300 border-t border-amber-500/30">
+                          RTB ACTIVE
+                        </div>
+                      ` : m.combatMode ? `
+                        <div class="w-full py-0.5 text-[6.5px] font-black font-mono tracking-widest text-center uppercase bg-red-600 text-white">
+                          COMBAT ENGAGED
+                        </div>
+                      ` : ''}
+                    </div>
+                  </div>
+                `,
+                iconSize: [64, 64],
+                iconAnchor: [32, 32]
+              })}
+              eventHandlers={{
+                click: () => onSelectMission?.(m.id)
+              }}
+            />
+          );
+        })
+      ) : (
+        currentPos && (
+          <Marker 
+            position={[currentPos.lat, currentPos.lng]}
+            icon={L.divIcon({
+              className: 'bg-transparent',
+              html: `
+                <div class="relative flex flex-col items-center pointer-events-none select-none" style="width: 60px; height: 60px;">
+                  <div class="absolute inset-1 rounded-full border border-cyan-400/20 ${isSimulating ? 'animate-pulse' : ''}"></div>
+                  <div class="absolute inset-0 rounded-full border-t-2 border-b-2 border-cyan-400/30 ${isSimulating ? 'animate-spin' : ''}" style="animation-duration: 8s;"></div>
+
+                  <div class="absolute inset-0 flex items-center justify-center transition-transform duration-200 ease-out" style="transform: rotate(${heading || 0}deg); transform-origin: 30px 30px;">
+                    <div class="absolute -top-5 w-0.5 h-5 bg-gradient-to-t from-cyan-400 to-cyan-200 shadow-[0_0_8px_#38bdf8] flex flex-col items-center justify-start">
+                      <div class="w-1.5 h-1.5 -top-1 absolute rotate-45 border-t border-l border-cyan-200"></div>
+                    </div>
+                    
+                    <div class="w-10 h-10 flex items-center justify-center">
+                      ${getPlayerAircraftSvg()}
+                    </div>
+                  </div>
+
+                  <div class="absolute top-13 flex flex-col items-center bg-slate-950/95 backdrop-blur-md rounded-xl border ${combatMode ? 'border-red-500/70 shadow-red-500/30' : 'border-cyan-400/60 shadow-cyan-500/30'} shadow-2xl min-w-[105px] overflow-hidden z-20 transition-all">
+                    <div class="w-full flex items-center justify-between gap-1.5 px-2 py-0.5 ${combatMode ? 'bg-red-950/80 border-b border-red-500/30' : 'bg-cyan-950/80 border-b border-cyan-400/30'}">
+                      <span class="text-[8px] font-black tracking-wider ${combatMode ? 'text-red-300' : 'text-cyan-300'} font-mono flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full ${combatMode ? 'bg-red-400' : 'bg-cyan-400'} animate-ping"></span>
+                        ${callSign || 'EAGLE-01'}
+                      </span>
+                      <span class="text-[7px] font-mono font-bold ${combatMode ? 'text-red-300' : 'text-cyan-200/80'} uppercase">
+                        ${selectedAircraft?.name ? selectedAircraft.name.split(' ')[0] : 'VIPER'}
+                      </span>
+                    </div>
+
+                    <div class="px-2 py-1 flex items-center justify-center gap-1.5 text-[7.5px] font-mono text-slate-100 font-bold whitespace-nowrap">
+                      <span>FL${Math.round(currentAltitude / 100).toString().padStart(3, '0')}</span>
+                      <span class="text-cyan-400/50">•</span>
+                      <span>${Math.round(speed || 0)}KTS</span>
+                      <span class="text-cyan-400/50">•</span>
+                      <span class="text-amber-300">${Math.round(heading || 0).toString().padStart(3, '0')}°</span>
+                    </div>
+
+                    ${autoPilot || combatMode ? `
+                      <div class="w-full py-0.5 text-[6.5px] font-black font-mono tracking-widest text-center uppercase ${combatMode ? 'bg-red-600 text-white' : 'bg-amber-500/20 text-amber-300 border-t border-amber-500/30'}">
+                        ${combatMode ? '⚡ COMBAT MODE' : '✈ AP ENGAGED'}
+                      </div>
+                    ` : ''}
+                  </div>
                 </div>
-              </div>
-            `,
-            iconSize: [60, 60],
-            iconAnchor: [30, 30]
-          })}
-        />
+              `,
+              iconSize: [60, 60],
+              iconAnchor: [30, 30]
+            })}
+          />
+        )
       )}
 
-      {/* Waypoint Markers - Precision Tactical Fix Symbol */}
-      {waypoints.map((wp, index) => (
-        <Marker 
-          key={`wp-${wp.id}-${index}`} 
-          position={[wp.lat, wp.lng]}
-          icon={L.divIcon({
-            className: 'bg-transparent',
-            html: `
-              <div class="relative flex flex-col items-center pointer-events-none select-none">
-                <!-- Outer Pulse Halo for Active / RV Waypoints -->
-                <div class="w-5 h-5 rounded-full border-2 ${
-                  wp.reached 
-                    ? 'bg-emerald-500/30 border-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' 
-                    : wp.isRV 
-                    ? 'bg-amber-500/30 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.9)] animate-pulse' 
-                    : 'bg-blue-600/30 border-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.7)]'
-                } flex items-center justify-center transition-all">
-                  ${
+      {/* Waypoint Markers - Precision Tactical Fix Symbol (Multi-Mission or Single) */}
+      {activeMissions && activeMissions.length > 0 ? (
+        activeMissions.map((m) => (
+          <React.Fragment key={`multi-wps-group-${m.id}`}>
+            {m.waypoints.map((wp, index) => {
+              const isSelected = m.id === selectedMissionId;
+              const isReached = wp.reached;
+              const mColor = m.color || '#38bdf8';
+
+              return (
+                <Marker 
+                  key={`multi-wp-${m.id}-${wp.id}-${index}`} 
+                  position={[wp.lat, wp.lng]}
+                  icon={L.divIcon({
+                    className: 'bg-transparent cursor-pointer',
+                    html: `
+                      <div class="relative flex flex-col items-center select-none" style="width: 48px; height: 48px;">
+                        <div class="w-5 h-5 rounded-full border-2 ${
+                          isReached 
+                            ? 'bg-emerald-500/30 border-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' 
+                            : isSelected
+                            ? 'bg-cyan-500/30 border-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]'
+                            : 'bg-slate-900/60 border-slate-400'
+                        } flex items-center justify-center transition-all" style="border-color: ${isReached ? '#34d399' : mColor}">
+                          ${
+                            isReached 
+                              ? '<svg class="w-3 h-3 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7" /></svg>' 
+                              : `<span class="text-[7px] font-mono font-black text-white">${String(index + 1).padStart(2, '0')}</span>`
+                          }
+                        </div>
+                        <div class="absolute top-6 bg-slate-950/95 backdrop-blur px-1.5 py-0.5 rounded border shadow-xl whitespace-nowrap" style="border-color: ${mColor}50;">
+                          <span class="text-[7px] font-mono uppercase font-black tracking-tight" style="color: ${mColor}">
+                            [M${m.missionNumber}] ${wp.name || `WP-${index + 1}`}
+                          </span>
+                        </div>
+                      </div>
+                    `,
+                    iconSize: [48, 48],
+                    iconAnchor: [24, 24]
+                  })}
+                  eventHandlers={{
+                    click: () => onSelectMission?.(m.id)
+                  }}
+                />
+              );
+            })}
+          </React.Fragment>
+        ))
+      ) : (
+        waypoints.map((wp, index) => (
+          <Marker 
+            key={`wp-${wp.id}-${index}`} 
+            position={[wp.lat, wp.lng]}
+            icon={L.divIcon({
+              className: 'bg-transparent',
+              html: `
+                <div class="relative flex flex-col items-center pointer-events-none select-none">
+                  <!-- Outer Pulse Halo for Active / RV Waypoints -->
+                  <div class="w-5 h-5 rounded-full border-2 ${
                     wp.reached 
-                      ? '<svg class="w-3 h-3 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7" /></svg>' 
-                      : `<span class="text-[7px] font-mono font-black text-white">${String(index + 1).padStart(2, '0')}</span>`
-                  }
+                      ? 'bg-emerald-500/30 border-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' 
+                      : wp.isRV 
+                      ? 'bg-amber-500/30 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.9)] animate-pulse' 
+                      : 'bg-blue-600/30 border-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.7)]'
+                  } flex items-center justify-center transition-all">
+                    ${
+                      wp.reached 
+                        ? '<svg class="w-3 h-3 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7" /></svg>' 
+                        : `<span class="text-[7px] font-mono font-black text-white">${String(index + 1).padStart(2, '0')}</span>`
+                    }
+                  </div>
+                  <!-- Waypoint Label Pill -->
+                  <div class="absolute top-6 bg-slate-950/90 backdrop-blur px-1.5 py-0.5 rounded-md border border-white/20 shadow-xl whitespace-nowrap">
+                    <span class="text-[7.5px] font-mono text-cyan-200 uppercase font-black tracking-wider">${wp.isRV ? '[RV] ' : ''}${wp.name}</span>
+                  </div>
                 </div>
-                <!-- Waypoint Label Pill -->
-                <div class="absolute top-6 bg-slate-950/90 backdrop-blur px-1.5 py-0.5 rounded-md border border-white/20 shadow-xl whitespace-nowrap">
-                  <span class="text-[7.5px] font-mono text-cyan-200 uppercase font-black tracking-wider">${wp.isRV ? '[RV] ' : ''}${wp.name}</span>
-                </div>
-              </div>
-            `,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
-          })}
-        />
-      ))}
+              `,
+              iconSize: [20, 20],
+              iconAnchor: [10, 10]
+            })}
+          />
+        ))
+      )}
     </MapContainer>
   );
 };

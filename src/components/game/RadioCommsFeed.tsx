@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Radio, Volume2, ChevronUp, ChevronDown, MessageSquareText, Send, Mic, Sparkles } from 'lucide-react';
+import { Radio, Volume2, VolumeX, ChevronUp, ChevronDown, MessageSquareText, Send, Mic, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CommsMessage } from '../../engine/aviationCommsEngine';
+import { cn } from '../../lib/utils';
 
 interface RadioCommsFeedProps {
   language: 'id' | 'en';
@@ -9,6 +10,9 @@ interface RadioCommsFeedProps {
   activeFrequency?: string;
   onReplayAudio?: (text: string, isATC: boolean) => void;
   onTransmitMessage?: (text: string) => void;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
+  isMultiMission?: boolean;
 }
 
 export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
@@ -16,7 +20,10 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
   messages,
   activeFrequency = '128.20 MHz',
   onReplayAudio,
-  onTransmitMessage
+  onTransmitMessage,
+  isMuted = false,
+  onToggleMute,
+  isMultiMission = false
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -71,7 +78,12 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
             <div className={`w-2 h-2 rounded-full ${isTransmitting ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-ping'}`} />
             <Radio className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-[9px] font-black text-blue-200 uppercase tracking-widest flex items-center gap-1.5">
-              {language === 'id' ? 'KOMUNIKASI RADIO TAKTIS (TOWER, PESAWAT INTAI & PILOT)' : 'TACTICAL RADIO COMMS (TOWER, RECON & PILOT)'}
+              {language === 'id' ? 'RADIO TAKTIS' : 'TACTICAL RADIO'}
+              {isMultiMission && (
+                <span className="text-[7px] px-1.5 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 rounded font-black tracking-wider">
+                  {language === 'id' ? 'TEKS SAJA (MULTI-MISI)' : 'TEXT ONLY (MULTI-OP)'}
+                </span>
+              )}
               {isTransmitting && (
                 <span className="text-[7.5px] px-1.5 py-0.2 bg-amber-500 text-black font-black rounded animate-pulse">
                   TX TRANSMITTING
@@ -81,6 +93,25 @@ export const RadioCommsFeed: React.FC<RadioCommsFeedProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Mute Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleMute?.();
+              }}
+              className={cn(
+                "px-2 py-0.5 rounded text-[8px] font-mono font-bold flex items-center gap-1 border transition-all cursor-pointer",
+                isMuted
+                  ? "bg-red-500/25 text-red-300 border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.3)]"
+                  : "bg-blue-900/40 text-cyan-300 border-blue-500/30 hover:bg-blue-800/60"
+              )}
+              title={isMuted ? (language === 'id' ? 'Aktifkan Suara Radio' : 'Unmute Radio Audio') : (language === 'id' ? 'Mute Suara Radio' : 'Mute Radio Audio')}
+            >
+              {isMuted ? <VolumeX className="w-3 h-3 text-red-400" /> : <Volume2 className="w-3 h-3 text-cyan-400" />}
+              <span>{isMuted ? (language === 'id' ? 'MUTE' : 'MUTED') : (language === 'id' ? 'AUDIO' : 'AUDIO')}</span>
+            </button>
+
             <span className="text-[8px] font-mono text-cyan-300 bg-black/60 px-1.5 py-0.5 rounded border border-cyan-500/20">
               {latestMessage?.frequency || activeFrequency}
             </span>

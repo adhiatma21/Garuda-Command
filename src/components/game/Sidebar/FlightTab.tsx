@@ -30,7 +30,7 @@ import {
 import { cn, getDistance } from '../../../lib/utils';
 import { calculateAircraftWeights } from '../../../lib/weightCalculation';
 import { AirportSelector } from '../AirportSelector';
-import { Waypoint, Aircraft, Crew, PlayerProfile, ReconState, PlannerWaypoint } from '../../../types';
+import { Waypoint, Aircraft, Crew, PlayerProfile, ReconState, PlannerWaypoint, ActiveMission } from '../../../types';
 import { MilitaryAirport } from '../../../airports';
 import { AIRCRAFT_PRESETS } from '../../../constants';
 import { GeneralFlightPlanner } from '../GeneralFlightPlanner';
@@ -126,6 +126,15 @@ interface FlightTabProps {
   setIsPickingReconSurvey?: (v: boolean) => void;
   plannerWaypoints?: PlannerWaypoint[];
   setPlannerWaypoints?: React.Dispatch<React.SetStateAction<PlannerWaypoint[]>>;
+  activeMissions?: ActiveMission[];
+  selectedMissionId?: string | null;
+  onSelectMission?: (missionId: string | null) => void;
+  onAbortMission?: (missionId: string) => void;
+  onRTBMission?: (missionId: string) => void;
+  maxConcurrentMissions?: number;
+  fleetCount?: number;
+  crewCapacity?: number;
+  onAddNewMissionPlan?: () => void;
 }
 
 const MISSION_OPTIONS = [
@@ -346,7 +355,16 @@ export const FlightTab: React.FC<FlightTabProps> = ({
   isPickingReconSurvey = false,
   setIsPickingReconSurvey,
   plannerWaypoints = [],
-  setPlannerWaypoints
+  setPlannerWaypoints,
+  activeMissions = [],
+  selectedMissionId = null,
+  onSelectMission,
+  onAbortMission,
+  onRTBMission,
+  maxConcurrentMissions = 1,
+  fleetCount = 1,
+  crewCapacity = 1,
+  onAddNewMissionPlan
 }) => {
   const [patrolLat, setPatrolLat] = useState('');
   const [patrolLng, setPatrolLng] = useState('');
@@ -357,8 +375,263 @@ export const FlightTab: React.FC<FlightTabProps> = ({
     return calculateAircraftWeights(selectedAircraft, crew, payload, useSubTank, combatMode);
   }, [selectedAircraft, crew, payload, useSubTank, combatMode]);
 
+  const currentSelectedMission = useMemo(() => {
+    if (!selectedMissionId) return null;
+    return activeMissions.find(m => m.id === selectedMissionId) || null;
+  }, [activeMissions, selectedMissionId]);
+
   return (
     <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="p-4 space-y-6">
+      {/* MULTI-MISSION COMMAND CENTER & SWITCHER */}
+      {activeMissions.length > 0 && (
+        <div className="bg-slate-900/90 border border-sky-500/30 rounded-2xl p-4 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                <Plane className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                  {language === 'id' ? 'Pusat Kendali Multi-Misi' : 'Multi-Mission Command'}
+                </h3>
+                <p className="text-[9px] font-mono text-slate-400">
+                  {language === 'id' 
+                    ? `Armada: ${fleetCount} Pesawat • Kru: ${crewCapacity} Personel`
+                    : `Fleet: ${fleetCount} Ready • Crew: ${crewCapacity} Available`}
+                </p>
+              </div>
+            </div>
+
+            {/* Capacity Badge */}
+            <div className="text-right">
+              <span className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black font-mono uppercase border",
+                activeMissions.length >= maxConcurrentMissions
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+              )}>
+                <span className={cn(
+                  "w-1.5 h-1.5 rounded-full animate-pulse",
+                  activeMissions.length >= maxConcurrentMissions ? "bg-amber-400" : "bg-emerald-400"
+                )} />
+                {activeMissions.length} / {maxConcurrentMissions} {language === 'id' ? 'Misi Aktif' : 'Active'}
+              </span>
+            </div>
+          </div>
+
+          {/* Mission Selector Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+            {activeMissions.map((m) => {
+              const isSelected = m.id === selectedMissionId;
+              const mColor = m.color || '#38bdf8';
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => onSelectMission?.(m.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold font-mono transition-all shrink-0 border",
+                    isSelected
+                      ? "bg-sky-950/80 text-white border-sky-400 shadow-lg shadow-sky-500/20 ring-1 ring-sky-400"
+                      : "bg-slate-950/50 text-slate-300 hover:text-white border-white/10 hover:border-white/20"
+                  )}
+                >
+                  <span 
+                    className="w-2.5 h-2.5 rounded-full shrink-0" 
+                    style={{ backgroundColor: mColor, boxShadow: `0 0 8px ${mColor}` }} 
+                  />
+                  <span>Misi Running {m.missionNumber}</span>
+                  <span className="text-[8.5px] opacity-60">({m.callSign})</span>
+                </button>
+              );
+            })}
+
+            {/* Add New Mission Button (if capacity permits) */}
+            {activeMissions.length < maxConcurrentMissions ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onAddNewMissionPlan) {
+                    onAddNewMissionPlan();
+                  } else {
+                    onSelectMission?.(null);
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold font-mono transition-all shrink-0 border border-dashed",
+                  selectedMissionId === null
+                    ? "bg-emerald-950/70 border-emerald-400 text-emerald-300 ring-1 ring-emerald-400"
+                    : "bg-slate-950/30 border-emerald-500/40 text-emerald-400 hover:bg-emerald-950/40"
+                )}
+              >
+                <Plus className="w-3 h-3" />
+                <span>{language === 'id' ? '+ Tambah Misi Baru' : '+ New Mission'}</span>
+              </button>
+            ) : (
+              <div className="px-2.5 py-1.5 text-[8.5px] font-mono text-slate-500 italic shrink-0">
+                {language === 'id' ? '(Kapasitas Penuh)' : '(Capacity Max)'}
+              </div>
+            )}
+          </div>
+
+          {/* ACTIVE MISSION DETAIL VIEW */}
+          {currentSelectedMission && (
+            <motion.div 
+              initial={{ opacity: 0, y: 5 }} 
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-slate-950/90 border border-white/10 rounded-xl p-3.5 space-y-3.5"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span 
+                    className="w-3 h-3 rounded-full shrink-0" 
+                    style={{ backgroundColor: currentSelectedMission.color || '#38bdf8' }} 
+                  />
+                  <div>
+                    <h4 className="text-[11px] font-black text-white font-mono uppercase">
+                      Misi Running {currentSelectedMission.missionNumber} ({currentSelectedMission.callSign})
+                    </h4>
+                    <p className="text-[8.5px] font-mono text-sky-400 uppercase">
+                      {currentSelectedMission.missionType} • {currentSelectedMission.selectedAircraft?.name}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[8px] font-mono font-black uppercase",
+                    currentSelectedMission.isRTB 
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      : currentSelectedMission.combatMode
+                      ? "bg-red-500/20 text-red-300 border border-red-500/30"
+                      : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  )}>
+                    {currentSelectedMission.isRTB 
+                      ? 'RTB KE BASE' 
+                      : currentSelectedMission.combatMode 
+                      ? 'COMBAT MODE' 
+                      : 'AIRBORNE'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Telemetry Display Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="text-[7.5px] font-mono text-slate-400 uppercase block">Ketinggian (Alt)</span>
+                  <span className="text-xs font-black font-mono text-white">
+                    FL{Math.round(currentSelectedMission.currentAltitude / 100).toString().padStart(3, '0')}
+                  </span>
+                </div>
+                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="text-[7.5px] font-mono text-slate-400 uppercase block">Kecepatan (IAS)</span>
+                  <span className="text-xs font-black font-mono text-sky-400">
+                    {Math.round(currentSelectedMission.speed || 0)} KTS
+                  </span>
+                </div>
+                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="text-[7.5px] font-mono text-slate-400 uppercase block">Heading (Arah)</span>
+                  <span className="text-xs font-black font-mono text-amber-300">
+                    {Math.round(currentSelectedMission.heading || 0)}°
+                  </span>
+                </div>
+                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="text-[7.5px] font-mono text-slate-400 uppercase block">Sisa Bahan Bakar</span>
+                  <span className="text-xs font-black font-mono text-emerald-400">
+                    {Math.round(currentSelectedMission.fuelRemaining).toLocaleString()} LBS
+                  </span>
+                </div>
+              </div>
+
+              {/* Route & Waypoint Status */}
+              <div className="p-2.5 bg-black/40 rounded-lg border border-white/5 space-y-1.5">
+                <div className="flex items-center justify-between text-[8px] font-mono text-slate-400 uppercase">
+                  <span>Rencana Rute & Waypoint</span>
+                  <span className="text-white font-bold">
+                    {currentSelectedMission.waypoints.filter(w => w.reached).length} / {currentSelectedMission.waypoints.length} Dicapai
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-[8.5px] font-mono text-slate-300">
+                  <MapPin className="w-3 h-3 text-sky-400 shrink-0" />
+                  <span className="truncate">
+                    {currentSelectedMission.departureAirport?.name || 'Home Base'}
+                  </span>
+                  <ChevronRight className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                  <span className="truncate text-white font-bold">
+                    {currentSelectedMission.arrivalAirport?.name || 'Destinasi Misi'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Mission Controls: RTB / Abort */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onRTBMission?.(currentSelectedMission.id)}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[9px] font-black font-mono uppercase tracking-wider transition-all border",
+                    currentSelectedMission.isRTB
+                      ? "bg-amber-600/30 text-amber-300 border-amber-500/50 cursor-default"
+                      : "bg-amber-600 hover:bg-amber-500 text-white border-amber-400/50 shadow-md shadow-amber-900/30"
+                  )}
+                  disabled={currentSelectedMission.isRTB}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>{currentSelectedMission.isRTB ? 'RTB Sedang Berjalan' : 'RTB Misi Ini'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onAbortMission?.(currentSelectedMission.id)}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[9px] font-black font-mono uppercase tracking-wider transition-all bg-red-600/20 hover:bg-red-600/40 text-red-300 border border-red-500/40"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>{language === 'id' ? 'Batalkan Misi' : 'Abort Mission'}</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* If In New Mission Planning Mode */}
+          {selectedMissionId === null && (
+            <div className="p-3.5 bg-gradient-to-r from-emerald-950/70 to-slate-900/90 border border-emerald-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-emerald-950/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg border border-emerald-500/30 shrink-0">
+                  <Play className="w-4 h-4 fill-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-emerald-300 uppercase font-mono">
+                    {language === 'id' 
+                      ? `Menyusun & Siap Luncurkan Misi Running ${activeMissions.length + 1}` 
+                      : `Planning & Ready to Launch Mission Running ${activeMissions.length + 1}`}
+                  </p>
+                  <p className="text-[8px] text-emerald-200/70 font-mono">
+                    {language === 'id' 
+                      ? 'Lengkapi rute & konfigurasi di bawah, lalu klik Luncurkan Misi.' 
+                      : 'Configure route & aircraft below, then click Launch Mission.'}
+                  </p>
+                </div>
+              </div>
+
+              {onStartMission && (
+                <button
+                  type="button"
+                  onClick={onStartMission}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-black font-mono text-[10px] uppercase tracking-wider transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 active:scale-95 border border-emerald-400 shrink-0"
+                >
+                  <Play className="w-3.5 h-3.5 fill-white" />
+                  <span>
+                    {language === 'id' 
+                      ? `LUNCURKAN MISI ${activeMissions.length + 1}` 
+                      : `LAUNCH MISSION ${activeMissions.length + 1}`}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Mission Type Selection Header */}
       <div className="space-y-2 bg-[#0d1422] p-3.5 rounded-xl border border-white/10">
         <div className="flex items-center justify-between">
@@ -482,7 +755,7 @@ export const FlightTab: React.FC<FlightTabProps> = ({
           targetSpeed={targetSpeed}
           setTargetSpeed={setTargetSpeed}
           onStartMission={onStartMission || (() => {})}
-          isTracking={isTracking}
+          isTracking={selectedMissionId !== null && isTracking}
           onRTB={onRTB}
           isRTB={isRTB}
           deleteCurrentRoute={deleteCurrentRoute}
@@ -1395,18 +1668,38 @@ export const FlightTab: React.FC<FlightTabProps> = ({
 
               {/* Mission Action Buttons for non-General missions */}
               <div className="pt-2 space-y-2">
-                {!isTracking && onStartMission && (
+                {(!isTracking || selectedMissionId === null) && onStartMission && (
                   <button
                     type="button"
                     onClick={onStartMission}
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(37,99,235,0.4)] flex items-center justify-center gap-2 active:scale-95 border border-blue-400"
+                    className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(37,99,235,0.4)] flex items-center justify-center gap-2 active:scale-95 border border-blue-400"
                   >
                     <Play className="w-4 h-4 fill-white" />
-                    <span>{language === 'id' ? 'EKSEKUSI MISI PENERBANGAN' : 'EXECUTE FLIGHT MISSION'}</span>
+                    <span>
+                      {selectedMissionId === null && activeMissions.length > 0
+                        ? (language === 'id' ? `EKSEKUSI MISI RUNNING ${activeMissions.length + 1}` : `EXECUTE MISSION RUNNING ${activeMissions.length + 1}`)
+                        : (language === 'id' ? 'EKSEKUSI MISI PENERBANGAN' : 'EXECUTE FLIGHT MISSION')}
+                    </span>
                   </button>
                 )}
 
-                {isTracking && onRTB && (
+                {/* If viewing a running mission and capacity permits, show quick button to prepare next mission */}
+                {selectedMissionId !== null && activeMissions.length < maxConcurrentMissions && onAddNewMissionPlan && (
+                  <button
+                    type="button"
+                    onClick={onAddNewMissionPlan}
+                    className="w-full py-2.5 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold uppercase tracking-wider text-xs transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      {language === 'id' 
+                        ? `+ JALANKAN MISI BARU (MISI ${activeMissions.length + 1})` 
+                        : `+ LAUNCH NEW MISSION (MISSION ${activeMissions.length + 1})`}
+                    </span>
+                  </button>
+                )}
+
+                {isTracking && selectedMissionId !== null && onRTB && (
                   <button
                     type="button"
                     onClick={onRTB}

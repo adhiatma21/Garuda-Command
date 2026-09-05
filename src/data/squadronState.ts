@@ -12,7 +12,7 @@ import {
   PendingDeliveryItem,
   SquadronCommissioningPipeline
 } from '../types';
-import { AIRCRAFT_PRESETS, SQUADRON_DATA } from '../constants';
+import { AIRCRAFT_PRESETS, SQUADRON_DATA, PLAYABLE_SQUADRONS } from '../constants';
 
 export const INITIAL_SQUADRON_BUDGET = 1500000000; // Rp 1.500.000.000
 
@@ -1115,6 +1115,68 @@ export function calculateSquadronCrewCapacity(roster: SquadronCrewRoster, active
     currentTotalPersonnel,
     requiredTotalPersonnel
   };
+}
+
+// Calculate allowed concurrent missions based on available fleet and crew support capacity
+export function getSquadronMissionCapacity(playerProfile?: PlayerProfile | null) {
+  try {
+    let squadronId = 'sq1';
+    if (playerProfile?.squadron) {
+      const matchById = PLAYABLE_SQUADRONS.find(s => s.id.toLowerCase() === playerProfile.squadron.toLowerCase());
+      if (matchById) {
+        squadronId = matchById.id;
+      } else {
+        const matchByName = PLAYABLE_SQUADRONS.find(
+          s => s.name.toLowerCase().includes(playerProfile.squadron.toLowerCase()) || 
+               playerProfile.squadron.toLowerCase().includes(s.name.toLowerCase())
+        );
+        if (matchByName) squadronId = matchByName.id;
+      }
+    } else {
+      const activeSaved = localStorage.getItem('ais_active_squadron_id');
+      if (activeSaved) squadronId = activeSaved;
+    }
+
+    const storageKey = `ais_sq_state_${squadronId}`;
+    let fleetCount = 3;
+    const savedFleet = localStorage.getItem(`${storageKey}_owned_fleet`);
+    if (savedFleet) {
+      const parsed = JSON.parse(savedFleet);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const readyAircraft = parsed.filter(a => (a.readinessStatus === 'ready' || a.readinessStatus === 'maintenance') && (a.operationalReadiness ?? 100) >= 15);
+        fleetCount = Math.max(3, readyAircraft.length > 0 ? readyAircraft.length : parsed.length);
+      }
+    }
+
+    let roster = createDefaultCrewRoster(playerProfile?.commanderName || 'Komandan Skuadron', 'GARUDA-01');
+    const savedRoster = localStorage.getItem(`${storageKey}_crew_roster`);
+    if (savedRoster) {
+      const parsed = JSON.parse(savedRoster);
+      if (parsed?.groundCrew) roster = parsed;
+    }
+
+    const capacityAnalysis = calculateSquadronCrewCapacity(roster, fleetCount);
+    // Allowed concurrent missions: bounded by available ready aircraft and crew support (min 3 for operational wing)
+    const maxConcurrentMissions = Math.max(3, Math.min(fleetCount, capacityAnalysis.effectiveMaxHandlingCapacity));
+
+    return {
+      maxConcurrentMissions,
+      fleetCount,
+      crewCapacity: capacityAnalysis.effectiveMaxHandlingCapacity,
+      readinessPercent: capacityAnalysis.readinessPercent,
+      isOverburdened: capacityAnalysis.isOverburdened,
+      bottlenecks: capacityAnalysis.bottlenecks
+    };
+  } catch (e) {
+    return {
+      maxConcurrentMissions: 2,
+      fleetCount: 2,
+      crewCapacity: 2,
+      readinessPercent: 100,
+      isOverburdened: false,
+      bottlenecks: []
+    };
+  }
 }
 
 // TRAINING ACADEMY COURSES (SEKOLAH PENERBANG & WING DIKLAT TEKNIK)

@@ -24,6 +24,8 @@ class RadioSpeechManager {
   private sessionToken = 0;
   private lastSpokenText = '';
   private lastSpokenTime = 0;
+  private isMuted = false;
+  private isTextOnly = false;
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -44,8 +46,34 @@ class RadioSpeechManager {
     this.currentLanguage = lang;
   }
 
+  public setMuted(muted: boolean) {
+    this.isMuted = muted;
+    if (muted) {
+      this.clearQueue();
+    }
+  }
+
+  public getMuted(): boolean {
+    return this.isMuted;
+  }
+
+  public setTextOnly(textOnly: boolean) {
+    this.isTextOnly = textOnly;
+    if (textOnly) {
+      this.clearQueue();
+    }
+  }
+
+  public getTextOnly(): boolean {
+    return this.isTextOnly;
+  }
+
   public speak(text: string, isATC = false, language?: 'id' | 'en', priority: 'normal' | 'urgent' = 'normal') {
     if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return;
+    }
+
+    if (this.isMuted || this.isTextOnly) {
       return;
     }
 

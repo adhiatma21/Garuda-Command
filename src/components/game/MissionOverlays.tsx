@@ -51,6 +51,9 @@ interface MissionOverlaysProps {
   onTransmitMessage?: (text: string) => void;
   onRTB?: () => void;
   isRTB?: boolean;
+  isRadioMuted?: boolean;
+  onToggleRadioMute?: () => void;
+  isMultiMission?: boolean;
 }
 
 export const MissionOverlays: React.FC<MissionOverlaysProps> = ({
@@ -96,7 +99,10 @@ export const MissionOverlays: React.FC<MissionOverlaysProps> = ({
   onReplayAudio,
   onTransmitMessage,
   onRTB,
-  isRTB
+  isRTB,
+  isRadioMuted,
+  onToggleRadioMute,
+  isMultiMission
 }) => {
   if (!isSimulating && !isReconSimulating && !activeScenario && commsMessages.length === 0) return null;
 
@@ -179,6 +185,9 @@ export const MissionOverlays: React.FC<MissionOverlaysProps> = ({
           messages={commsMessages}
           onReplayAudio={onReplayAudio}
           onTransmitMessage={onTransmitMessage}
+          isMuted={isRadioMuted}
+          onToggleMute={onToggleRadioMute}
+          isMultiMission={isMultiMission}
         />
       )}
 
